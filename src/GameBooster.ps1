@@ -925,7 +925,8 @@ Write-AppLog "Building Modern WPF Interface..."
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <Button Name="BtnRunHealthCheck" Content="🩺 Run Readiness Health Check" Background="#0284C7" Foreground="#FFFFFF" Height="32" Padding="14,0" FontWeight="Bold" Margin="0,0,8,0"/>
                             <Button Name="BtnDiagnoseSelectedCrash" Content="🔍 Diagnose Selected Crash" Background="#D97706" Foreground="#FFFFFF" Height="32" Padding="14,0" FontWeight="Bold" Margin="0,0,8,0"/>
-                            <Button Name="BtnRefreshCrashes" Content="🔄 Refresh Crash Events" Background="#1E293B" Foreground="#E2E8F0" Height="32" Padding="12,0"/>
+                            <Button Name="BtnRefreshCrashes" Content="🔄 Refresh Crash Events" Background="#1E293B" Foreground="#E2E8F0" Height="32" Padding="12,0" Margin="0,0,8,0"/>
+                            <Button Name="BtnExportDebugReport" Content="📥 Export Full Debug Report" Background="#059669" Foreground="#FFFFFF" Height="32" Padding="14,0" FontWeight="Bold"/>
                         </StackPanel>
                     </Grid>
 
@@ -1087,6 +1088,7 @@ $menuCtxRestoreAll         = $window.FindName("MenuCtxRestoreAll")
 $btnRunHealthCheck         = $window.FindName("BtnRunHealthCheck")
 $btnDiagnoseSelectedCrash  = $window.FindName("BtnDiagnoseSelectedCrash")
 $btnRefreshCrashes         = $window.FindName("BtnRefreshCrashes")
+$btnExportDebugReport      = $window.FindName("BtnExportDebugReport")
 $gridCrashEvents           = $window.FindName("GridCrashEvents")
 $txtDiagnosticReport       = $window.FindName("TxtDiagnosticReport")
 
@@ -2445,6 +2447,17 @@ $gridCrashEvents.add_SelectionChanged({
                                    "• Exception Code: $($sel.ExceptionCode)`r`n" +
                                    "• Time: $($sel.Timestamp)`r`n`r`n" +
                                    "Click 'Diagnose Selected Crash' above to run root-cause analysis and remediation steps."
+    }
+})
+
+# Export Full Debug Report
+$btnExportDebugReport.Add_Click({
+    $txtStatusBar.Text = "Generating comprehensive debug report..."
+    $exportPs = Join-Path $ScriptDir "Export-DebugReport.ps1"
+    if (Test-Path $exportPs) {
+        $reportPath = & $PSHostExe -NoProfile -ExecutionPolicy Bypass -File $exportPs
+        $txtStatusBar.Text = "Debug report exported to Desktop."
+        [System.Windows.MessageBox]::Show("Full Debug Report has been generated on your Desktop and opened in Notepad:`n`n$reportPath", "Debug Report Exported", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
 
