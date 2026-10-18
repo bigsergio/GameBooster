@@ -87,6 +87,11 @@ function Set-TimerResolution05ms {
     return "Timer resolution tuned to ${ms}ms (Maximum hardware precision)."
 }
 
+function Set-TimerResolutionMaximum {
+    param([bool]$enable = $true)
+    return Set-TimerResolution05ms
+}
+
 function Set-HagsEnabled([bool]$enable) {
     $val = if ($enable) { 2 } else { 1 }
     $key = "HKLM:\SYSTEM\CurrentControlSet\Control\GraphicsDrivers"

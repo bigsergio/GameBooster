@@ -1169,18 +1169,21 @@ function Update-DaemonIndicators {
 function Reload-ProcessGrid {
     $cfg = Get-AppConfig
     $wl = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    
+    # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons, Windows Subsystems)
+    $essentialServices = Get-EssentialGamingServicesWhitelist
+    foreach ($es in $essentialServices) { $wl.Add($es) | Out-Null }
+
+    # 2. Configured user whitelist & systemProtected
     if ($cfg.whitelist) {
         foreach ($w in $cfg.whitelist) { $wl.Add($w) | Out-Null }
     }
-    # Protect GPU daemons
-    foreach ($g in $script:gpuWhitelist) { $wl.Add($g) | Out-Null }
-    $wl.Add("explorer") | Out-Null
-    $wl.Add("taskmgr") | Out-Null
-    $wl.Add("GameBooster") | Out-Null
-    $wl.Add("powershell") | Out-Null
-    $wl.Add("pwsh") | Out-Null
-    $wl.Add("wt") | Out-Null
-    $wl.Add("conhost") | Out-Null
+    if ($cfg.systemProtected) {
+        foreach ($sp in $cfg.systemProtected) { $wl.Add($sp) | Out-Null }
+    }
+    if ($cfg.hardwareKeep) {
+        foreach ($hk in $cfg.hardwareKeep) { $wl.Add($hk) | Out-Null }
+    }
 
     $script:ProcessList.Clear()
     $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID -and $_.ProcessName -ne "Idle" -and $_.ProcessName -ne "System" }
@@ -1224,8 +1227,9 @@ function Reload-ProcessGrid {
         $displayPid = if ($procCount -gt 1) { "$($pids[0]) (+$($procCount - 1))" } else { "$($pids[0])" }
         $displayName = if ($procCount -gt 1) { "$pName ($procCount procs)" } else { $pName }
 
-        # Default selected for launchers, browsers, and background tools
-        $isSel = ($cat -in @("Launcher / Social", "Web Browser") -or ($cat -eq "Interactive App" -and $pName -notmatch "RTSS|MSIAfterburner|HWiNFO"))
+        # Default selected for launchers, browsers, and background tools (Never select anti-cheats, sound drivers, or overlays)
+        $isProtected = $wl.Contains($pName) -or ($pName -match "RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud")
+        $isSel = (-not $isProtected -and ($cat -in @("Launcher / Social", "Web Browser") -or $cat -eq "Interactive App"))
 
         $script:ProcessList.Add([PSCustomObject]@{
             IsSelected      = $isSel
@@ -1258,8 +1262,10 @@ $gridProcesses.add_CurrentCellChanged({
 
 # Preset selection buttons
 $btnSelectNonEssential.Add_Click({
+    $essentialServices = Get-EssentialGamingServicesWhitelist
+    $esSet = [System.Collections.Generic.HashSet[string]]::new($essentialServices, [System.StringComparer]::OrdinalIgnoreCase)
     foreach ($item in $script:ProcessList) {
-        $item.IsSelected = ($item.Name -notmatch "RTSS|MSIAfterburner|HWiNFO64|obs64")
+        $item.IsSelected = (-not $esSet.Contains($item.Name) -and $item.Name -notmatch "RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud")
     }
     $gridProcesses.Items.Refresh()
     Update-SelectedMetrics
@@ -1690,7 +1696,7 @@ $btnApplyAllTweaks.Add_Click({
     $btnApplyAllTweaks.Content = "Applying Gaming Tweaks..."
 
     try {
-        Set-TimerResolutionMaximum $true | Out-Null
+        Set-TimerResolution05ms | Out-Null
         Set-HagsEnabled $true | Out-Null
         Set-GameModeEnabled $true | Out-Null
         Set-TcpNoDelay $true | Out-Null
@@ -1708,6 +1714,9 @@ $btnApplyAllTweaks.Add_Click({
                "• System Power Plan: Ultimate Performance`n`n" +
                "All settings have been applied directly to Windows subsystems."
         [System.Windows.MessageBox]::Show($msg, "Gaming Tweaks Applied", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    } catch {
+        Write-AppLog "Error applying gaming tweaks: $_" "ERROR"
+        [System.Windows.MessageBox]::Show("Error applying gaming tweaks:`n`n$($_.Exception.Message)", "Tweak Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
     } finally {
         $btnApplyAllTweaks.IsEnabled = $true
         $btnApplyAllTweaks.Content = "⚡ 1-Click Apply All Gaming Tweaks"
@@ -2024,29 +2033,18 @@ function Reload-WhitelistGrid {
     $cfg = Get-AppConfig
     $script:WhitelistList.Clear()
     
-    # Add GPU protected processes
-    foreach ($g in $script:gpuInfo.WhitelistProcesses) {
-        $script:WhitelistList.Add([PSCustomObject]@{
-            ProcessName = $g
-            Category    = "$($script:gpuInfo.Vendor) Driver"
-            Reason      = "Display driver & GPU hardware acceleration daemon"
-        })
-    }
-
-    # Add system defaults
-    $sysDefaults = @("explorer", "taskmgr", "GameBooster", "wt", "conhost", "powershell", "pwsh")
-    foreach ($s in $sysDefaults) {
-        $script:WhitelistList.Add([PSCustomObject]@{
-            ProcessName = $s
-            Category    = "Windows Subsystem"
-            Reason      = "Core Windows shell and booster environment"
-        })
+    # Add all dynamically protected gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU, Windows)
+    $allProtected = Get-ProtectedGamingServicesDetails
+    $known = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($p in $allProtected) {
+        $known.Add($p.ProcessName) | Out-Null
+        $script:WhitelistList.Add($p)
     }
 
     # Add user whitelist
     if ($cfg.whitelist) {
         foreach ($w in $cfg.whitelist) {
-            if ($sysDefaults -notcontains $w -and $script:gpuInfo.WhitelistProcesses -notcontains $w) {
+            if (-not $known.Contains($w)) {
                 $script:WhitelistList.Add([PSCustomObject]@{
                     ProcessName = $w
                     Category    = "User Whitelist"
