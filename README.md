@@ -8,8 +8,14 @@
 ![Zero Telemetry](https://img.shields.io/badge/Telemetry-ZERO-brightgreen?style=for-the-badge)
 ![Anti-Cheat Safe](https://img.shields.io/badge/Anti--Cheat-100%25%20Safe%20(No%20DLL%20Hook)-blue?style=for-the-badge)
 
-**The Modern, Autonomous Gaming Performance & Hardware Telemetry Suite for Windows.**  
+**The Modern, Autonomous Gaming Performance & Hardware Telemetry Suite for Windows 10 & 11.**  
 *Engineered for competitive esports, high-refresh displays, and micro-stutter elimination.*
+
+[Download Latest Release](https://github.com/bigsergio/GameBooster/releases) • [Features](#-key-features) • [Screenshots](#-interface--in-game-showcase) • [Anti-Cheat Safety](#️-anti-cheat--security-guarantee) • [Portuguese Guide](assets/infographic_pt.png)
+
+<br>
+
+[![Game Booster PRO Dashboard](assets/dashboard_tweaks.png)](https://github.com/bigsergio/GameBooster/releases)
 
 </div>
 
@@ -20,6 +26,36 @@
 **Game Booster PRO v1.0** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
 
 Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DLLs into game processes, Game Booster PRO is built on native Win32 APIs, modern WPF rendering, and a standalone elevated C# executable launcher (`GameBooster.exe`).
+
+---
+
+## 📸 Interface & In-Game Showcase
+
+<div align="center">
+
+### ⚡ 1-Click Tweaks, Standby Purge & Server Ping Radar
+*Monitor and optimize Windows low-latency subsystems, flush standby memory, clean shader caches, and track server pings.*
+![1-Click Tweaks and Radar](assets/dashboard_tweaks.png)
+
+<br>
+
+### 🖥️ Dual-Monitor Terminal HUD & Streamer-Branded In-Game OSD
+*Dock full-screen hardware telemetry on secondary monitors (`btop4win` + `bottom` + live ping graph) alongside an unobtrusive, click-through in-game transparent OSD.*
+![Hardware HUD and In-Game OSD](assets/hud_osd_showcase.png)
+
+<br>
+
+### 🩺 Windows Event Crash Diagnostics & Health Check
+*Inspect application crashes, isolate faulting modules (`ntdll.dll`, `flutter_windows.dll`, graphics drivers), and get instant root-cause analysis.*
+![Crash Diagnostics](assets/crash_diagnostics.png)
+
+<br>
+
+### 🚀 Automated Companion Launcher
+*Automatically start your favorite companion tools (Discord, OBS, RTSS) when monitored games launch, with custom startup delays.*
+![Companions & Auto-Start](assets/companions_autostart.png)
+
+</div>
 
 ---
 
@@ -79,8 +115,13 @@ Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DL
 
 ```text
 GameBooster/
-├── assets/                     # Application branding, icons, and media
-│   └── gamebooster.ico
+├── assets/                     # Application branding, screenshots, and media
+│   ├── gamebooster.ico
+│   ├── dashboard_tweaks.png    # Tweaks & Server Radar screenshot
+│   ├── hud_osd_showcase.png    # Live HUD & In-game OSD showcase
+│   ├── crash_diagnostics.png   # Event crash diagnostics screenshot
+│   ├── companions_autostart.png# Auto-start companion screenshot
+│   └── infographic_pt.png      # Portuguese infographic summary
 ├── src/                        # Core application source code
 │   ├── Launcher/               # Elevated C# Native Wrapper
 │   │   ├── Program.cs          # Elevated single-instance launcher
@@ -111,17 +152,17 @@ GameBooster/
 ## 🚀 Quick Start Guide
 
 ### Option 1: Run the Precompiled Binary (Recommended)
-1. Download the latest release from the [GitHub Releases](https://github.com) page.
-2. Extract the archive to any folder of your choice (e.g. `C:\Games\GameBooster` or `Downloads\GameBooster`).
+1. Download the latest release from the [GitHub Releases](https://github.com/bigsergio/GameBooster/releases) page.
+2. Extract the archive to any folder or drive of your choice (e.g. `C:\Games\GameBooster` or `D:\Tools\GameBooster`).
 3. Double-click **`GameBooster.exe`**.
 4. Accept the Windows UAC elevation prompt (administrator privileges are required to adjust system timers, flush standby memory, and tune TCP adapters).
 
 ### Option 2: Run via PowerShell
-You can also launch the dashboard directly using PowerShell 7 or Windows PowerShell:
+You can also launch the dashboard directly using PowerShell 7 or Windows PowerShell 5.1:
 
 ```powershell
 # Open an elevated PowerShell terminal in the project directory
-pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\src\GameBooster.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\GameBooster.ps1
 ```
 
 ---
