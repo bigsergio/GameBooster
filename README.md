@@ -1,7 +1,8 @@
-# ⚡ Game Booster PRO v1.0
+# ⚡ Game Booster PRO v1.1
 
 <div align="center">
 
+![Release](https://img.shields.io/badge/Release-v1.1.0-emerald?style=for-the-badge)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![Platform](https://img.shields.io/badge/Architecture-x64-black?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
@@ -11,7 +12,7 @@
 **The Modern, Autonomous Gaming Performance & Hardware Telemetry Suite for Windows 10 & 11.**  
 *Engineered for competitive esports, high-refresh displays, and micro-stutter elimination.*
 
-[Download Latest Release](https://github.com/bigsergio/GameBooster/releases) • [Features](#-key-features) • [Screenshots](#-interface--in-game-showcase) • [Anti-Cheat Safety](#️-anti-cheat--security-guarantee) • [Portuguese Guide](assets/infographic_pt.png)
+[Download Latest Release](https://github.com/bigsergio/GameBooster/releases) • [Changelog](CHANGELOG.md) • [Features](#-key-features) • [Screenshots](#-interface--in-game-showcase) • [Anti-Cheat Safety](#️-anti-cheat--security-guarantee) • [Portuguese Guide](assets/infographic_pt.png)
 
 <br>
 
@@ -23,9 +24,16 @@
 
 ## 📖 Overview
 
-**Game Booster PRO v1.0** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
+**Game Booster PRO v1.1** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
 
 Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DLLs into game processes, Game Booster PRO is built on native Win32 APIs, modern WPF rendering, and a standalone elevated C# executable launcher (`GameBooster.exe`).
+
+> [!NOTE]
+> **What's New in v1.1.0:**
+> • **89 Protected Gaming & Audio Daemons:** Built-in whitelist prevents closing Riot Vanguard, BattlEye, Easy Anti-Cheat, PunkBuster, and Realtek/Dolby sound services.
+> • **Right-Click Context Menu:** Whitelist apps for this session only or permanently with 1-click.
+> • **1-Click Debug Reporter:** Generates a comprehensive crash & reboot report on your Desktop (`Export-DebugReport.bat`).
+> • See full details in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 

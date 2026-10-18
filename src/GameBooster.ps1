@@ -41,7 +41,7 @@ function Write-AppLog([string]$msg, [string]$level = "INFO") {
     try { Add-Content -Path $LogFile -Value $line -Force -ErrorAction SilentlyContinue } catch {}
 }
 
-Write-AppLog "Initializing Game Booster v1.0 PRO..."
+Write-AppLog "Initializing Game Booster v1.1 PRO..."
 
 # Load Core Modules
 try {
@@ -115,7 +115,7 @@ Write-AppLog "Building Modern WPF Interface..."
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Mode Booster v1.0 PRO"
+        Title="Game Mode Booster v1.1 PRO"
         Height="840" Width="1280" MinWidth="1080" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
@@ -233,7 +233,7 @@ Write-AppLog "Building Modern WPF Interface..."
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="GAME BOOSTER" FontSize="18" FontWeight="ExtraBold" Foreground="#10B981" Margin="0,0,6,0"/>
                             <Border Background="#047857" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="v1.0 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                <TextBlock Text="v1.1 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Ultra Low-Latency Gaming Engine | Multi-Platform Auto-Detector | Standby Cleaner" FontSize="11" Foreground="#94A3B8"/>
@@ -967,7 +967,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.0 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.1 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock Name="TxtMemorySummary" Grid.Column="1" Text="Standby RAM: Ready | Timer: 0.5ms" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
             </Grid>
         </Border>

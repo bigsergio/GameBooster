@@ -1,9 +1,16 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
+
+[assembly: AssemblyTitle("Game Booster PRO")]
+[assembly: AssemblyProduct("Game Booster PRO")]
+[assembly: AssemblyDescription("Autonomous Gaming Performance & Hardware Telemetry Suite for Windows")]
+[assembly: AssemblyVersion("1.1.0.0")]
+[assembly: AssemblyFileVersion("1.1.0.0")]
 
 namespace GameBoosterLauncher
 {
@@ -56,8 +63,8 @@ namespace GameBoosterLauncher
                         StringBuilder sb = new StringBuilder(256);
                         GetWindowText(hWnd, sb, 256);
                         string title = sb.ToString();
-                        if (string.Equals(title, "Game Mode Booster v1.0 PRO", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(title, "Game Booster PRO v1.0", StringComparison.OrdinalIgnoreCase))
+                        if (title.StartsWith("Game Mode Booster", StringComparison.OrdinalIgnoreCase) ||
+                            title.StartsWith("Game Booster PRO", StringComparison.OrdinalIgnoreCase))
                         {
                             existingWnd = hWnd;
                             return false;
