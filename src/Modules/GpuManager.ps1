@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Game Booster v1.0 - Module: Dynamic GPU Vendor Detection & Management
 # Identifies NVIDIA / AMD / Intel hardware and protects driver companion suites
 # ============================================================================

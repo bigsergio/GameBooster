@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Game Booster v1.0 - Module: Standby Memory & Working Set Purge
 # Native Windows RAM optimization: Flushes cached Standby RAM & Trims Working Sets
 # ============================================================================

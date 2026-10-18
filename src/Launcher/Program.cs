@@ -21,16 +21,33 @@ namespace GameBoosterLauncher
         [DllImport("user32.dll")]
         private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
 
+        [DllImport("kernel32.dll", EntryPoint = "DeleteFileW", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool DeleteFile(string lpFileName);
+
         private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
         private const int SW_RESTORE = 9;
+
+        private static void UnblockFiles(string dir)
+        {
+            try
+            {
+                if (!Directory.Exists(dir)) return;
+                string[] files = Directory.GetFiles(dir, "*.*", SearchOption.AllDirectories);
+                foreach (string f in files)
+                {
+                    DeleteFile(f + ":Zone.Identifier");
+                }
+            }
+            catch { }
+        }
 
         [STAThread]
         static void Main(string[] args)
         {
             try
             {
-                // Single-Instance Window Focus Check (unless CLI arguments are passed)
+                // Single-Instance Window Focus Check (exact title only to avoid matching browser tabs or folders)
                 if (args.Length == 0)
                 {
                     IntPtr existingWnd = IntPtr.Zero;
@@ -39,7 +56,8 @@ namespace GameBoosterLauncher
                         StringBuilder sb = new StringBuilder(256);
                         GetWindowText(hWnd, sb, 256);
                         string title = sb.ToString();
-                        if (title.StartsWith("Game Mode Booster", StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(title, "Game Mode Booster v1.0 PRO", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(title, "Game Booster PRO v1.0", StringComparison.OrdinalIgnoreCase))
                         {
                             existingWnd = hWnd;
                             return false;
@@ -55,7 +73,7 @@ namespace GameBoosterLauncher
                     }
                 }
 
-                // Determine Base Directory
+                // Determine Base Directory (supports any drive C:, D:, E:, etc.)
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory;
                 string scriptPath = Path.Combine(baseDir, "src", "GameBooster.ps1");
                 if (!File.Exists(scriptPath))
@@ -74,7 +92,10 @@ namespace GameBoosterLauncher
                     return;
                 }
 
-                // Locate preferred PowerShell host (PowerShell 7 if installed, else Windows PowerShell)
+                // Auto-unblock any downloaded files from Windows Mark of the Web
+                UnblockFiles(baseDir);
+
+                // Locate preferred PowerShell host (PowerShell 7 if installed, else Windows PowerShell 5.1)
                 string psHost = "powershell.exe";
                 string pwshPath = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
@@ -116,10 +137,29 @@ namespace GameBoosterLauncher
                     WorkingDirectory = baseDir,
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
-                    UseShellExecute = false
+                    UseShellExecute = false,
+                    RedirectStandardError = true
                 };
 
-                Process.Start(psi);
+                Process proc = Process.Start(psi);
+                if (proc != null)
+                {
+                    // Check if process crashed immediately on startup
+                    if (proc.WaitForExit(1500) && proc.ExitCode != 0)
+                    {
+                        string err = proc.StandardError.ReadToEnd();
+                        if (string.IsNullOrWhiteSpace(err))
+                        {
+                            err = "Process exited with code " + proc.ExitCode;
+                        }
+                        MessageBox.Show(
+                            "Game Booster encountered an issue during startup:\n\n" + err,
+                            "Game Booster - Startup Error",
+                            MessageBoxButtons.OK,
+                            MessageBoxIcon.Error
+                        );
+                    }
+                }
             }
             catch (Exception ex)
             {

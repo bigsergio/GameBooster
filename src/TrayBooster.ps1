@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Game Mode Booster - Unified System Tray Companion & Auto-Watcher
 # Features:
 #  - Global Hotkey (Ctrl+F11) to toggle/refocus Hardware HUD
@@ -166,7 +166,8 @@ $itemHeader.Font = New-Object System.Drawing.Font($itemHeader.Font, [System.Draw
 $contextMenu.Items.Add("-") | Out-Null
 
 # Auto-Watcher Toggle in Tray
-$itemToggleWatcher = $contextMenu.Items.Add(if ($script:autoWatcherEnabled) { "Auto-Watcher: ACTIVE (Auto-Boost)" } else { "Auto-Watcher: PAUSED (Click to Enable)" })
+$watcherLabel = if ($script:autoWatcherEnabled) { "Auto-Watcher: ACTIVE (Auto-Boost)" } else { "Auto-Watcher: PAUSED (Click to Enable)" }
+$itemToggleWatcher = $contextMenu.Items.Add($watcherLabel)
 $itemToggleWatcher.Checked = $script:autoWatcherEnabled
 $itemToggleWatcher.add_Click({
     $script:autoWatcherEnabled = -not $script:autoWatcherEnabled

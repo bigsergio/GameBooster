@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Game Mode Booster v1.0 PRO
 # Unified Gaming Performance Suite & High-Refresh Optimizer
 # Clean, Autonomous, Zero-Telemetry & GitHub-Ready
@@ -97,16 +97,15 @@ function Save-AppConfig($cfg) {
 # CLI Parameter handlers
 if ($StandbyPurge) {
     Write-Host "Purging Standby Memory and system cache..." -ForegroundColor Cyan
-    $res = Invoke-StandbyListPurge
-    Write-Host "Standby memory purged successfully. Freed: $($res.FreedMB) MB" -ForegroundColor Green
+    $res = Invoke-SmartMemoryPurge
+    Write-Host "Standby memory purged successfully. Freed: $($res.FreedStandbyMB) MB" -ForegroundColor Green
     exit 0
 }
 
 if ($Radar) {
     Write-Host "Executing Network Latency & Server Radar scan..." -ForegroundColor Cyan
-    $targets = Get-DefaultRadarTargets
-    $pings = Measure-ServerRadarPingAsync -Targets $targets
-    $pings | Format-Table Region, Location, Host, PingMs, Status -AutoSize
+    $pings = Test-GamingRadarPing
+    $pings | Format-Table Region, Cluster, Host, Latency, Quality -AutoSize
     exit 0
 }
 
