@@ -33,10 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Restore Session Right-Click Support:**
   - Added right-click row selection to Tab 7 (`GridRestoreSession`) for seamless individual application restoration.
 
-### 🐛 Bug Fixes
+### 🐛 Bug Fixes & UI Polish
+- **Dark ComboBox Template (High-Contrast Readability):** Replaced default Windows Aero2 light button chrome with a native dark slate ComboBox template. Selected values (such as `All Logical Cores (Default)` and HUD presets) now render in bold, crisp white (`#FFFFFF`) against dark slate (`#1E293B`), completely eliminating pale/invisible text.
+- **Eliminated ContextMenu White Icon Gutter:** Applied a custom dark border template to `ContextMenu` and `MenuItem`, removing the default Windows theme's white/light icon column on the left for a seamless, unified dark aesthetic.
 - **1-Click Apply All Gaming Tweaks:** Fixed missing alias `Set-TimerResolutionMaximum` in `src/Modules/SystemTweaks.ps1` that previously prevented TCP NoDelay, HAGS, and Windows Game Mode from executing synchronously.
 - **Windows PowerShell 5.1 Syntax Compatibility:** Enforced UTF-8 BOM (`EF BB BF`) across all scripts, eliminating 26 parse errors when loaded under legacy Windows PowerShell 5.1 console runtimes.
-- **High-Contrast Dark Mode Rendering:** Fixed dark/unreadable text contrast in diagnostic report boxes and dropdown controls.
 
 ---
 

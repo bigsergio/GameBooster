@@ -181,32 +181,207 @@ Write-AppLog "Building Modern WPF Interface..."
             <Setter Property="Height" Value="28"/>
         </Style>
 
-        <!-- ComboBox Dark Styling & Visible Contrast Dropdowns -->
+        <!-- Dark ComboBox ToggleButton Template (Forces Dark Slate Background & High Contrast) -->
+        <ControlTemplate x:Key="DarkComboBoxToggleButton" TargetType="ToggleButton">
+            <Border Name="Border"
+                    Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="5">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="26"/>
+                    </Grid.ColumnDefinitions>
+                    <Path Grid.Column="1"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Center"
+                          Fill="#94A3B8"
+                          Data="M 0 0 L 4 4 L 8 0 Z"/>
+                </Grid>
+            </Border>
+            <ControlTemplate.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Border" Property="Background" Value="#334155"/>
+                    <Setter TargetName="Border" Property="BorderBrush" Value="#38BDF8"/>
+                </Trigger>
+                <Trigger Property="IsChecked" Value="True">
+                    <Setter TargetName="Border" Property="Background" Value="#1E293B"/>
+                    <Setter TargetName="Border" Property="BorderBrush" Value="#0284C7"/>
+                </Trigger>
+            </ControlTemplate.Triggers>
+        </ControlTemplate>
+
+        <!-- Dark ComboBox Style -->
         <Style TargetType="ComboBox">
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
             <Setter Property="Background" Value="#1E293B"/>
-            <Setter Property="Foreground" Value="#F8FAFC"/>
             <Setter Property="BorderBrush" Value="#334155"/>
             <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Padding" Value="8,4"/>
-            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton Name="ToggleButton"
+                                          Template="{StaticResource DarkComboBoxToggleButton}"
+                                          Focusable="false"
+                                          IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          ClickMode="Press"
+                                          Background="{TemplateBinding Background}"
+                                          BorderBrush="{TemplateBinding BorderBrush}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"/>
+                            <ContentPresenter Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
+                                              TextElement.Foreground="#FFFFFF"
+                                              TextElement.FontWeight="SemiBold"
+                                              TextElement.FontSize="12"
+                                              Margin="10,0,30,0"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"/>
+                            <Popup Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Slide">
+                                <Grid Name="DropDown"
+                                      SnapsToDevicePixels="True"
+                                      MinWidth="{TemplateBinding ActualWidth}"
+                                      MaxHeight="{TemplateBinding MaxDropDownHeight}">
+                                    <Border Name="DropDownBorder"
+                                            Background="#0F172A"
+                                            BorderThickness="1"
+                                            BorderBrush="#334155"
+                                            CornerRadius="5"
+                                            Margin="0,2,0,0">
+                                        <Border.Effect>
+                                            <DropShadowEffect BlurRadius="12" Color="#000000" Opacity="0.8" ShadowDepth="4"/>
+                                        </Border.Effect>
+                                        <ScrollViewer Margin="2,4" SnapsToDevicePixels="True">
+                                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="HasItems" Value="false">
+                                <Setter TargetName="DropDownBorder" Property="MinHeight" Value="95"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="false">
+                                <Setter Property="Foreground" Value="#64748B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
+
+        <!-- Dark ComboBoxItem Style -->
         <Style TargetType="ComboBoxItem">
-            <Setter Property="Background" Value="#1E293B"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="OverridesDefaultStyle" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border Name="Border"
+                                Padding="10,6"
+                                Margin="2,1"
+                                CornerRadius="4"
+                                Background="Transparent">
+                            <ContentPresenter TextElement.Foreground="#FFFFFF"
+                                              TextElement.FontSize="12"
+                                              TextElement.FontWeight="Normal"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#0284C7"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Border" Property="Background" Value="#047857"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#64748B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dark Cyberpunk ContextMenu (Completely eliminates the default white icon gutter) -->
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background" Value="#0F172A"/>
+            <Setter Property="BorderBrush" Value="#334155"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="4,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="12" Color="#000000" Opacity="0.8" ShadowDepth="4"/>
+                            </Border.Effect>
+                            <StackPanel IsItemsHost="True" KeyboardNavigation.DirectionalNavigation="Cycle"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Dark MenuItem Style with custom foreground retention -->
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
             <Setter Property="Foreground" Value="#F8FAFC"/>
-            <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Padding" Value="8,6"/>
-            <Setter Property="HorizontalContentAlignment" Value="Left"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Style.Triggers>
-                <Trigger Property="IsHighlighted" Value="True">
-                    <Setter Property="Background" Value="#0284C7"/>
-                    <Setter Property="Foreground" Value="#FFFFFF"/>
-                </Trigger>
-                <Trigger Property="IsSelected" Value="True">
-                    <Setter Property="Background" Value="#0F766E"/>
-                    <Setter Property="Foreground" Value="#FFFFFF"/>
-                </Trigger>
-            </Style.Triggers>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="14,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border Name="ItemBorder" Background="{TemplateBinding Background}" CornerRadius="4" Padding="{TemplateBinding Padding}" Margin="2,1">
+                            <ContentPresenter ContentSource="Header" TextElement.Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="True" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="ItemBorder" Property="Background" Value="#1E293B"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="#64748B"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Clean Menu Separator -->
+        <Style TargetType="Separator">
+            <Setter Property="Background" Value="#334155"/>
+            <Setter Property="Margin" Value="4,3"/>
+            <Setter Property="Height" Value="1"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Rectangle Fill="{TemplateBinding Background}" Height="1" Margin="{TemplateBinding Margin}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
     </Window.Resources>
 
@@ -332,10 +507,10 @@ Write-AppLog "Building Modern WPF Interface..."
                     <!-- Process DataGrid -->
                     <DataGrid Name="GridProcesses" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended">
                         <DataGrid.ContextMenu>
-                            <ContextMenu Background="#1E293B" Foreground="#FFFFFF" BorderBrush="#334155" BorderThickness="1">
+                            <ContextMenu>
                                 <MenuItem Name="MenuCtxWhitelistSession" Header="🛡️ Whitelist for this Session (Keep Open)" Foreground="#38BDF8" FontWeight="SemiBold"/>
                                 <MenuItem Name="MenuCtxWhitelistPermanent" Header="⭐ Whitelist Permanently (Always Protect)" Foreground="#10B981" FontWeight="SemiBold"/>
-                                <Separator Background="#334155"/>
+                                <Separator/>
                                 <MenuItem Name="MenuCtxCloseNow" Header="❌ Close This Application Now" Foreground="#F87171"/>
                                 <MenuItem Name="MenuCtxOpenFileLocation" Header="📁 Open File Location" Foreground="#E2E8F0"/>
                             </ContextMenu>
@@ -878,11 +1053,11 @@ Write-AppLog "Building Modern WPF Interface..."
 
                     <DataGrid Name="GridRestoreSession" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
                         <DataGrid.ContextMenu>
-                            <ContextMenu Background="#1E293B" Foreground="#FFFFFF">
-                                <MenuItem Name="MenuCtxRestoreOne" Header="Restore This Application"/>
-                                <MenuItem Name="MenuCtxRemoveOne" Header="Remove from Restore List"/>
+                            <ContextMenu>
+                                <MenuItem Name="MenuCtxRestoreOne" Header="🔄 Restore This Application" Foreground="#38BDF8" FontWeight="SemiBold"/>
+                                <MenuItem Name="MenuCtxRemoveOne" Header="🗑️ Remove from Restore List" Foreground="#F87171"/>
                                 <Separator/>
-                                <MenuItem Name="MenuCtxRestoreAll" Header="Restore All Applications"/>
+                                <MenuItem Name="MenuCtxRestoreAll" Header="⚡ Restore All Applications" Foreground="#A78BFA" FontWeight="Bold"/>
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Columns>
