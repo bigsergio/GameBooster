@@ -1,0 +1,22 @@
+# Runtime logs & PID files
+*.log
+*.pid
+gamebooster.log
+tray.pid
+
+# Session state
+last_session.json
+
+# Local configurations with personal edits (template is tracked)
+config.json
+
+# Build outputs & temporary files
+*.obj
+*.pdb
+*.tmp
+.vs/
+.vscode/
+
+# PowerShell temporary artifacts
+*.ps1xml
+*~

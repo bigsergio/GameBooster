@@ -1,0 +1,17 @@
+# Set default behavior to automatically normalize line endings
+* text=auto
+
+# Source code and scripts
+*.cs text diff=csharp
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.json text eol=lf
+*.md text eol=lf
+*.manifest text eol=crlf
+
+# Binary files
+*.exe binary
+*.dll binary
+*.ico binary
+*.png binary
+*.jpg binary

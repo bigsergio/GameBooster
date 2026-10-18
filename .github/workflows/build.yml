@@ -1,0 +1,47 @@
+name: Build & Validate
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate-and-build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Validate PowerShell Script Syntax
+      shell: pwsh
+      run: |
+        $scripts = Get-ChildItem -Path . -Recurse -Filter *.ps1
+        $failed = $false
+        foreach ($s in $scripts) {
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($s.FullName, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) {
+            Write-Error "Syntax error in $($s.FullName): $errors"
+            $failed = $true
+          } else {
+            Write-Host "Valid: $($s.Name)" -ForegroundColor Green
+          }
+        }
+        if ($failed) { exit 1 }
+
+    - name: Compile GameBooster.exe
+      shell: cmd
+      run: |
+        C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:winexe /out:GameBooster.exe /win32manifest:src\Launcher\app.manifest /win32icon:assets\gamebooster.ico /reference:System.Windows.Forms.dll,System.Drawing.dll src\Launcher\Program.cs
+
+    - name: Verify Executable Generated
+      shell: pwsh
+      run: |
+        if (Test-Path .\GameBooster.exe) {
+          Write-Host "GameBooster.exe compiled successfully! Size: $((Get-Item .\GameBooster.exe).Length) bytes" -ForegroundColor Green
+        } else {
+          Write-Error "GameBooster.exe was not generated!"
+          exit 1
+        }
