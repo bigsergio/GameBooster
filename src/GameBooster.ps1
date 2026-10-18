@@ -331,6 +331,15 @@ Write-AppLog "Building Modern WPF Interface..."
 
                     <!-- Process DataGrid -->
                     <DataGrid Name="GridProcesses" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu Background="#1E293B" Foreground="#FFFFFF" BorderBrush="#334155" BorderThickness="1">
+                                <MenuItem Name="MenuCtxWhitelistSession" Header="🛡️ Whitelist for this Session (Keep Open)" Foreground="#38BDF8" FontWeight="SemiBold"/>
+                                <MenuItem Name="MenuCtxWhitelistPermanent" Header="⭐ Whitelist Permanently (Always Protect)" Foreground="#10B981" FontWeight="SemiBold"/>
+                                <Separator Background="#334155"/>
+                                <MenuItem Name="MenuCtxCloseNow" Header="❌ Close This Application Now" Foreground="#F87171"/>
+                                <MenuItem Name="MenuCtxOpenFileLocation" Header="📁 Open File Location" Foreground="#E2E8F0"/>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Header="Close" Binding="{Binding IsSelected, UpdateSourceTrigger=PropertyChanged}" Width="50"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="140" IsReadOnly="True"/>
@@ -985,6 +994,10 @@ $btnSaveAllConfig          = $window.FindName("BtnSaveAllConfig")
 
 # Tab 1
 $gridProcesses             = $window.FindName("GridProcesses")
+$menuCtxWhitelistSession   = $window.FindName("MenuCtxWhitelistSession")
+$menuCtxWhitelistPermanent = $window.FindName("MenuCtxWhitelistPermanent")
+$menuCtxCloseNow           = $window.FindName("MenuCtxCloseNow")
+$menuCtxOpenFileLocation   = $window.FindName("MenuCtxOpenFileLocation")
 $btnSelectNonEssential     = $window.FindName("BtnSelectNonEssential")
 $btnSelectBalanced         = $window.FindName("BtnSelectBalanced")
 $btnDeselectAll            = $window.FindName("BtnDeselectAll")
@@ -1089,6 +1102,7 @@ $script:CompanionsList = [System.Collections.ObjectModel.ObservableCollection[PS
 $script:WhitelistList  = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
 $script:RestoreList    = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
 $script:CrashList      = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
+$script:SessionWhitelist = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 
 $gridProcesses.ItemsSource      = $script:ProcessList
 $gridGameLibrary.ItemsSource    = $script:GameList
@@ -1183,6 +1197,11 @@ function Reload-ProcessGrid {
     }
     if ($cfg.hardwareKeep) {
         foreach ($hk in $cfg.hardwareKeep) { $wl.Add($hk) | Out-Null }
+    }
+
+    # 3. Active session whitelist (apps whitelisted for this session only)
+    if ($script:SessionWhitelist) {
+        foreach ($sw in $script:SessionWhitelist) { $wl.Add($sw) | Out-Null }
     }
 
     $script:ProcessList.Clear()
@@ -1295,6 +1314,135 @@ $txtFilterProcess.Add_TextChanged({
     } else {
         $filtered = $script:ProcessList | Where-Object { $_.DisplayName -like "*$q*" -or $_.Name -like "*$q*" -or $_.MainWindowTitle -like "*$q*" -or $_.Category -like "*$q*" }
         $gridProcesses.ItemsSource = $filtered
+    }
+})
+
+# Handle right-click row selection for Process DataGrid
+$gridProcesses.Add_PreviewMouseRightButtonDown({
+    param($sender, $e)
+    try {
+        $dep = $e.OriginalSource
+        while ($dep -ne $null -and -not ($dep -is [System.Windows.Controls.DataGridRow])) {
+            $dep = [System.Windows.Media.VisualTreeHelper]::GetParent($dep)
+        }
+        if ($dep -is [System.Windows.Controls.DataGridRow] -and $dep.Item) {
+            $gridProcesses.SelectedItem = $dep.Item
+        }
+    } catch {}
+})
+
+# Context Menu: Whitelist for this Session (Keep Open)
+$menuCtxWhitelistSession.Add_Click({
+    $sel = $gridProcesses.SelectedItem
+    if (-not $sel) { return }
+    $pName = $sel.Name
+    $script:SessionWhitelist.Add($pName) | Out-Null
+
+    $script:ProcessList.Remove($sel) | Out-Null
+    if ($txtFilterProcess.Text.Trim()) {
+        $q = $txtFilterProcess.Text.Trim()
+        $gridProcesses.ItemsSource = @($script:ProcessList | Where-Object { $_.DisplayName -like "*$q*" -or $_.Name -like "*$q*" -or $_.MainWindowTitle -like "*$q*" -or $_.Category -like "*$q*" })
+    }
+    Update-SelectedMetrics
+    Reload-WhitelistGrid
+    $txtStatusBar.Text = "Whitelisted '$pName' for this session (will not be closed)."
+    [System.Windows.MessageBox]::Show("'$pName' will remain running and is protected for this session.", "Session Whitelist", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+})
+
+# Context Menu: Whitelist Permanently (Always Protect)
+$menuCtxWhitelistPermanent.Add_Click({
+    $sel = $gridProcesses.SelectedItem
+    if (-not $sel) { return }
+    $pName = $sel.Name
+
+    $cfg = Get-AppConfig
+    $wl = @()
+    if ($cfg.whitelist) { $wl = @($cfg.whitelist) }
+    if ($wl -notcontains $pName) {
+        $wl += $pName
+        $cfg.whitelist = $wl
+        Save-AppConfig $cfg | Out-Null
+    }
+
+    $script:SessionWhitelist.Add($pName) | Out-Null
+    $script:ProcessList.Remove($sel) | Out-Null
+    if ($txtFilterProcess.Text.Trim()) {
+        $q = $txtFilterProcess.Text.Trim()
+        $gridProcesses.ItemsSource = @($script:ProcessList | Where-Object { $_.DisplayName -like "*$q*" -or $_.Name -like "*$q*" -or $_.MainWindowTitle -like "*$q*" -or $_.Category -like "*$q*" })
+    }
+    Reload-WhitelistGrid
+    Update-SelectedMetrics
+    $txtStatusBar.Text = "'$pName' permanently whitelisted and saved to config."
+    [System.Windows.MessageBox]::Show("'$pName' has been added to your Permanent Whitelist and will never be targeted by Game Mode.", "Permanent Whitelist", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+})
+
+# Context Menu: Close This Application Now
+$menuCtxCloseNow.Add_Click({
+    $sel = $gridProcesses.SelectedItem
+    if (-not $sel) { return }
+    $pName = $sel.Name
+
+    $ask = [System.Windows.MessageBox]::Show("Close '$($sel.DisplayName)' immediately?", "Close Application", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    if ($ask -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+    $pidsToKill = if ($sel.Pids) { @($sel.Pids) } else { @($sel.Id) }
+    $appFreedRAM = 0
+    foreach ($pidVal in $pidsToKill) {
+        try {
+            $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
+            if ($p) {
+                $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
+                $appFreedRAM += $pRam
+                Stop-Process -Id $pidVal -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+    }
+
+    $closedItem = [PSCustomObject]@{
+        Name   = $sel.Name
+        Id     = $sel.Id
+        RAM_MB = if ($appFreedRAM -gt 0) { $appFreedRAM } else { $sel.RAM_MB }
+        Path   = $sel.Path
+        Time   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    }
+
+    $script:RestoreList.Insert(0, $closedItem)
+
+    try {
+        $sessData = if (Test-Path $SessionFile) { Get-Content $SessionFile -Raw | ConvertFrom-Json } else { [PSCustomObject]@{ ClosedApps = @(); TotalFreedMB = 0 } }
+        $existing = @()
+        if ($sessData.ClosedApps) { $existing = @($sessData.ClosedApps) }
+        $sessData.ClosedApps = @($closedItem) + $existing
+        $sessData.TotalFreedMB = [int]$sessData.TotalFreedMB + $closedItem.RAM_MB
+        $sessData.Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        $sessData | ConvertTo-Json -Depth 5 | Set-Content -Path $SessionFile -Encoding UTF8 -Force
+    } catch {}
+
+    $script:ProcessList.Remove($sel) | Out-Null
+    if ($txtFilterProcess.Text.Trim()) {
+        $q = $txtFilterProcess.Text.Trim()
+        $gridProcesses.ItemsSource = @($script:ProcessList | Where-Object { $_.DisplayName -like "*$q*" -or $_.Name -like "*$q*" -or $_.MainWindowTitle -like "*$q*" -or $_.Category -like "*$q*" })
+    }
+    Update-SelectedMetrics
+    $txtStatusBar.Text = "Closed '$($sel.DisplayName)' ($appFreedRAM MB freed)."
+})
+
+# Context Menu: Open File Location
+$menuCtxOpenFileLocation.Add_Click({
+    $sel = $gridProcesses.SelectedItem
+    if (-not $sel) { return }
+
+    if ($sel.Path -and (Test-Path $sel.Path)) {
+        Start-Process "explorer.exe" -ArgumentList "/select,`"$($sel.Path)`""
+    } elseif ($sel.Path) {
+        $dir = [System.IO.Path]::GetDirectoryName($sel.Path)
+        if (Test-Path $dir) {
+            Start-Process "explorer.exe" -ArgumentList "`"$dir`""
+        } else {
+            [System.Windows.MessageBox]::Show("Path not found: $($sel.Path)", "Executable Path", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        }
+    } else {
+        [System.Windows.MessageBox]::Show("Executable path could not be resolved for '$($sel.Name)'.", "Executable Path", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
 
@@ -2045,10 +2193,25 @@ function Reload-WhitelistGrid {
     if ($cfg.whitelist) {
         foreach ($w in $cfg.whitelist) {
             if (-not $known.Contains($w)) {
+                $known.Add($w) | Out-Null
                 $script:WhitelistList.Add([PSCustomObject]@{
                     ProcessName = $w
                     Category    = "User Whitelist"
                     Reason      = "Manually protected from game mode closure"
+                })
+            }
+        }
+    }
+
+    # Add active session whitelist items
+    if ($script:SessionWhitelist) {
+        foreach ($sw in $script:SessionWhitelist) {
+            if (-not $known.Contains($sw)) {
+                $known.Add($sw) | Out-Null
+                $script:WhitelistList.Add([PSCustomObject]@{
+                    ProcessName = $sw
+                    Category    = "Session Only"
+                    Reason      = "Whitelisted for current session only"
                 })
             }
         }
@@ -2073,22 +2236,36 @@ $btnAddWhitelist.Add_Click({
         })
         $txtNewWhitelistProcess.Text = ""
         $txtStatusBar.Text = "Added $val to whitelist."
+        Reload-ProcessGrid
     }
 })
 
 $btnRemoveWhitelist.Add_Click({
     $sel = $gridWhitelist.SelectedItem
-    if ($sel -and $sel.Category -eq "User Whitelist") {
-        $cfg = Get-AppConfig
-        if ($cfg.whitelist) {
-            $filtered = @($cfg.whitelist | Where-Object { $_ -ne $sel.ProcessName })
-            $cfg.whitelist = $filtered
-            Save-AppConfig $cfg | Out-Null
+    if ($sel) {
+        if ($sel.Category -eq "User Whitelist") {
+            $cfg = Get-AppConfig
+            if ($cfg.whitelist) {
+                $filtered = @($cfg.whitelist | Where-Object { $_ -ne $sel.ProcessName })
+                $cfg.whitelist = $filtered
+                Save-AppConfig $cfg | Out-Null
+            }
+            if ($script:SessionWhitelist.Contains($sel.ProcessName)) {
+                $script:SessionWhitelist.Remove($sel.ProcessName) | Out-Null
+            }
+            $script:WhitelistList.Remove($sel) | Out-Null
+            $txtStatusBar.Text = "Removed $($sel.ProcessName) from whitelist."
+            Reload-ProcessGrid
+        } elseif ($sel.Category -eq "Session Only") {
+            if ($script:SessionWhitelist.Contains($sel.ProcessName)) {
+                $script:SessionWhitelist.Remove($sel.ProcessName) | Out-Null
+            }
+            $script:WhitelistList.Remove($sel) | Out-Null
+            $txtStatusBar.Text = "Removed $($sel.ProcessName) from session whitelist."
+            Reload-ProcessGrid
+        } else {
+            [System.Windows.MessageBox]::Show("Cannot remove driver or system-protected processes.", "Protected Process", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         }
-        $script:WhitelistList.Remove($sel)
-        $txtStatusBar.Text = "Removed $($sel.ProcessName) from whitelist."
-    } else {
-        [System.Windows.MessageBox]::Show("Cannot remove driver or system-protected processes.", "Protected Process", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
     }
 })
 
@@ -2163,6 +2340,20 @@ $btnClearRestoreList.Add_Click({
     try { Remove-Item $SessionFile -Force -ErrorAction SilentlyContinue } catch {}
     $script:RestoreList.Clear()
     $txtStatusBar.Text = "Cleared restore session list."
+})
+
+# Handle right-click row selection for Restore DataGrid
+$gridRestoreSession.Add_PreviewMouseRightButtonDown({
+    param($sender, $e)
+    try {
+        $dep = $e.OriginalSource
+        while ($dep -ne $null -and -not ($dep -is [System.Windows.Controls.DataGridRow])) {
+            $dep = [System.Windows.Media.VisualTreeHelper]::GetParent($dep)
+        }
+        if ($dep -is [System.Windows.Controls.DataGridRow] -and $dep.Item) {
+            $gridRestoreSession.SelectedItem = $dep.Item
+        }
+    } catch {}
 })
 
 # Context Menu handlers for Restore
