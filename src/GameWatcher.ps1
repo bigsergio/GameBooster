@@ -68,30 +68,69 @@ try {
             Write-Host " -> Activating Game Mode (closing background apps, flushing standby RAM)..." -ForegroundColor Cyan
             Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent"
 
-            # 2. Auto-Launch Companion Apps (e.g. Discord)
-            if ($autoStartConfig -and $autoStartConfig.enabled -and $autoStartConfig.apps) {
-                foreach ($app in $autoStartConfig.apps) {
-                    if ($app.enabled) {
-                        $running = Get-Process -Name $app.processName -ErrorAction SilentlyContinue
+            # 2. Auto-Launch Companion Apps
+            # 2a. Global Companion Apps (from Tab 5)
+            $globalCompanions = if ($autoStartConfig.companionApps) { $autoStartConfig.companionApps } elseif ($autoStartConfig.apps) { $autoStartConfig.apps } else { @() }
+            if ($globalCompanions) {
+                foreach ($app in $globalCompanions) {
+                    $isEnabled = if ($null -ne $app.enabled) { [bool]$app.enabled } else { $true }
+                    if ($isEnabled) {
+                        $pName = if ($app.processName) { $app.processName } else { $app.name }
+                        $running = Get-Process -Name $pName -ErrorAction SilentlyContinue
                         if (-not $running) {
-                            Write-Host " -> Auto-starting companion app: $($app.name)..." -ForegroundColor Cyan
-                            Write-WatcherLog "Auto-launching companion app: $($app.name)"
+                            Write-Host " -> Auto-starting global companion: $($app.name)..." -ForegroundColor Cyan
+                            Write-WatcherLog "Auto-launching global companion: $($app.name)"
                             try {
                                 if ($app.path -match '(?i)Discord') {
                                     Start-Process "$env:LOCALAPPDATA\Discord\Update.exe" -ArgumentList "--processStart Discord.exe"
                                 } elseif ($app.path -and (Test-Path $app.path)) {
                                     Start-Process $app.path
                                 } else {
-                                    Start-Process $app.processName -ErrorAction SilentlyContinue
+                                    Start-Process $pName -ErrorAction SilentlyContinue
                                 }
                             } catch {
-                                Write-WatcherLog "Failed to launch $($app.name): $_"
+                                Write-WatcherLog "Failed to launch global companion $($app.name): $_"
                             }
                         } else {
-                            Write-Host " -> Companion app $($app.name) is already running." -ForegroundColor DarkGray
+                            Write-Host " -> Global companion $($app.name) is already running." -ForegroundColor DarkGray
                         }
                     }
                 }
+            }
+
+            # 2b. Per-Game Custom Companions (from Tab 2 Profile - supports multiple programs separated by commas/semicolons)
+            try {
+                if (Test-Path $ConfigFile) {
+                    $rawCfg = Get-Content -Raw -Path $ConfigFile -Encoding UTF8 | ConvertFrom-Json
+                    $gameKey = $gameProc.ProcessName -replace '\.exe$', ''
+                    if ($rawCfg.gameProfiles -and $rawCfg.gameProfiles.$gameKey) {
+                        $prof = $rawCfg.gameProfiles.$gameKey
+                        $customStr = if ($prof.Companion) { $prof.Companion } elseif ($prof.CompanionApps) { ($prof.CompanionApps -join ', ') } else { "" }
+                        if ($customStr) {
+                            $targets = $customStr -split '[,;\|]' | ForEach-Object { $_.Trim() } | Where-Object { $_ }
+                            foreach ($prog in $targets) {
+                                Write-Host " -> Auto-starting per-game companion: $prog..." -ForegroundColor Cyan
+                                Write-WatcherLog "Auto-launching per-game companion: $prog"
+                                try {
+                                    if ($prog -match '(?i)Discord') {
+                                        $dPath = "$env:LOCALAPPDATA\Discord\Update.exe"
+                                        if (Test-Path $dPath) { Start-Process $dPath -ArgumentList "--processStart Discord.exe" }
+                                    } elseif (Test-Path $prog) {
+                                        Start-Process $prog
+                                    } else {
+                                        $pClean = $prog -replace '\.exe$', ''
+                                        $isRun = Get-Process -Name $pClean -ErrorAction SilentlyContinue
+                                        if (-not $isRun) { Start-Process $prog -ErrorAction SilentlyContinue }
+                                    }
+                                } catch {
+                                    Write-WatcherLog "Failed to launch per-game companion '$prog': $_"
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch {
+                Write-WatcherLog "Error reading per-game companion: $_"
             }
 
             # 3. Launch or Refocus Hardware HUD

@@ -833,8 +833,8 @@ Write-AppLog "Building Modern WPF Interface..."
 
                                 <!-- Custom Companions per game -->
                                 <StackPanel Grid.Column="2" Margin="0,0,10,0">
-                                    <TextBlock Text="Launch Custom Companion:" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4"/>
-                                    <TextBox Name="TxtGameCompanion" Height="28" Background="#1E293B" Foreground="#FFFFFF" BorderBrush="#334155" Padding="6,3" ToolTip="Executable to launch specifically when this game starts (e.g. Discord, OBS)"/>
+                                    <TextBlock Text="Launch Custom Companion(s):" Foreground="#94A3B8" FontSize="11" Margin="0,0,0,4"/>
+                                    <TextBox Name="TxtGameCompanion" Height="28" Background="#1E293B" Foreground="#FFFFFF" BorderBrush="#334155" Padding="6,3" ToolTip="Executable(s) to launch when this game starts. Separate multiple programs with commas (e.g. Discord, obs64, C:\Tools\Tracker.exe)"/>
                                 </StackPanel>
 
                                 <!-- Auto OSD Toggle -->
@@ -2640,15 +2640,19 @@ $btnUnlockOsd.Add_Click({ Toggle-InGameOsdAction -Unlock })
 function Reload-CompanionsGrid {
     $cfg = Get-AppConfig
     $script:CompanionsList.Clear()
-    if ($cfg.autoStartWith -and $cfg.autoStartWith.companionApps) {
-        foreach ($c in $cfg.autoStartWith.companionApps) {
-            $script:CompanionsList.Add([PSCustomObject]@{
-                Enabled      = if ($null -ne $c.enabled) { [bool]$c.enabled } else { $true }
-                Name         = $c.name
-                DelaySeconds = if ($c.delaySeconds) { $c.delaySeconds } else { 2 }
-                Path         = $c.path
-            })
-        }
+    $apps = if ($cfg.autoStartWith -and $cfg.autoStartWith.companionApps) {
+        $cfg.autoStartWith.companionApps
+    } elseif ($cfg.autoStartWith -and $cfg.autoStartWith.apps) {
+        $cfg.autoStartWith.apps
+    } else { @() }
+
+    foreach ($c in $apps) {
+        $script:CompanionsList.Add([PSCustomObject]@{
+            Enabled      = if ($null -ne $c.enabled) { [bool]$c.enabled } else { $true }
+            Name         = if ($c.name) { $c.name } else { $c.processName }
+            DelaySeconds = if ($c.delaySeconds) { $c.delaySeconds } else { 2 }
+            Path         = if ($c.path) { $c.path } else { $c.processName }
+        })
     }
 }
 
@@ -2692,6 +2696,14 @@ $btnSaveCompanions.Add_Click({
         $cfg | Add-Member -MemberType NoteProperty -Name "autoStartWith" -Value ([PSCustomObject]@{}) -Force
     }
     $cfg.autoStartWith.companionApps = @($script:CompanionsList)
+    $cfg.autoStartWith.apps = @($script:CompanionsList | ForEach-Object {
+        [PSCustomObject]@{
+            name        = $_.Name
+            processName = $_.Name
+            path        = $_.Path
+            enabled     = [bool]$_.Enabled
+        }
+    })
     Save-AppConfig $cfg | Out-Null
     $txtStatusBar.Text = "Saved $($script:CompanionsList.Count) companion app(s) to config.json."
     [System.Windows.MessageBox]::Show("Companion apps saved successfully!", "Companions Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
