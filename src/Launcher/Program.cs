@@ -9,13 +9,16 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Game Booster PRO")]
 [assembly: AssemblyProduct("Game Booster PRO")]
 [assembly: AssemblyDescription("Autonomous Gaming Performance & Hardware Telemetry Suite for Windows")]
-[assembly: AssemblyVersion("1.1.0.0")]
-[assembly: AssemblyFileVersion("1.1.0.0")]
+[assembly: AssemblyVersion("1.2.0.0")]
+[assembly: AssemblyFileVersion("1.2.0.0")]
 
 namespace GameBoosterLauncher
 {
     static class Program
     {
+        [DllImport("shell32.dll", SetLastError = true)]
+        private static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
+
         [DllImport("user32.dll")]
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
@@ -54,6 +57,12 @@ namespace GameBoosterLauncher
         {
             try
             {
+                try
+                {
+                    SetCurrentProcessExplicitAppUserModelID("GameBooster.Suite.PRO");
+                }
+                catch { }
+
                 // Single-Instance Window Focus Check (exact title only to avoid matching browser tabs or folders)
                 if (args.Length == 0)
                 {

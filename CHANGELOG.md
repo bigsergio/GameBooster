@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2026-10-19
+
+### 🛡️ Critical OS Kernel Subsystem & BugCheck Protection
+- **Hardcoded Critical OS Subsystem Blacklist:** Implemented an impenetrable safety guard right at process enumeration and termination. Windows core subsystems and security services (`csrss`, `services`, `lsass`, `wininit`, `smss`, `svchost`, `fontdrvhost`, `dwm`, `explorer`, `winlogon`, `sppsvc`, `SearchIndexer`, `SecurityHealthService`, `SecurityHealthSystray`, `MsMpEng`, `NisSrv`, `MpDefenderCoreService`, `DefenderSessionHelper`, `MoUsoCoreWorker`, `RuntimeBroker`, `StartMenuExperienceHost`, `taskhostw`, `ctfmon`, `SystemSettings`, `TextInputHost`, `ShellHost`, `conhost`, `cmd`, `pwsh`, `powershell`, `wt`, `GameBooster`, `taskmgr`) can NEVER appear in the process grid and can NEVER be terminated, preventing Windows BugCheck (`CRITICAL_PROCESS_DIED`) reboots.
+- **Fail-Safe Process Closure Guard:** Added a second-level check inside the `Stop-Process` loop in `Activate-GameMode` that instantly skips any protected OS subsystem or whitelisted process, guaranteeing system stability even in edge cases or corrupted state.
+
+### 🌐 Server Ping Radar Stability & Accuracy
+- **Crash-Proof Latency Radar:** Rewrote `Test-GamingRadarPing` with bounded asynchronous task execution (`Task.Wait`), per-endpoint exception isolation, and safe socket cleanup. Network interruptions, DNS resolution failures, or filtered ICMP packets now fail gracefully without freezing or crashing the application.
+- **Reliable European Gaming Datacenter Endpoints:** Updated ping cluster targets to responsive, production-tested game server relays: Valve/CS2 Frankfurt (`162.254.197.1`), London (`155.133.248.1`), Stockholm (`155.133.252.1`), Blizzard Europe (`37.244.54.10`), AWS Europe Central (`dynamodb.eu-central-1.amazonaws.com`), AWS Europe West (`dynamodb.eu-west-1.amazonaws.com`), Riot Games EU (`104.160.143.212`), Cloudflare (`1.1.1.1`), and Google (`8.8.8.8`).
+- **Fastest Server Metric Correction:** Fixed an issue where offline/timed-out servers (`-1 ms`) were mistakenly selected as the "Fastest Server", ensuring only valid positive roundtrip times (`> 0 ms`) are reported.
+- **UI Spam Protection:** Automatically disables the "Ping All Servers Now" button while an asynchronous scan is underway, preventing socket pool exhaustion.
+
+### ⚡ 1-Click Tweaks: TCP NoDelay (Nagle's Algorithm) Fix
+- **Universal Network Interface Detection:** `Set-TcpNoDelay` now iterates across all active network adapter interface GUIDs under `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces`. Modern Windows 10/11 network stacks with dynamic DHCP or IPv6 that do not store static string IP properties in root keys are now fully supported, successfully turning the tweak badge to `ACTIVE` (green).
+
+### 🎨 Windows Taskbar & App Bar Custom Branding
+- **Native Taskbar Icon & AppUserModelID:** Resolved an issue where Windows grouped Game Booster under `powershell.exe` with a generic command terminal icon. Registered explicit `AppUserModelID` (`GameBooster.Suite.PRO`) and dispatched Win32 `WM_SETICON` (`ICON_BIG` & `ICON_SMALL`) on window initialization. The Windows Taskbar, Alt+Tab app switcher, and Title Bar now consistently display the custom high-res Game Booster cyber emblem.
+- **Recompiled Native C# Launcher:** `GameBooster.exe` recompiled to version 1.2.0.0 with embedded icon and administrator manifest.
+
+---
+
 ## [1.1.0] - 2026-10-18
 
 ### 🛡️ Critical Anti-Cheat & System Protection

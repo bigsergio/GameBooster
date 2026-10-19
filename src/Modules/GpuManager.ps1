@@ -164,19 +164,21 @@ function Get-ProtectedGamingServicesDetails {
         })
     }
 
-    # 5. Core Windows Subsystems
+    # 5. Core Windows Subsystems & System Security Daemons
     $windowsCore = @(
         "explorer", "taskmgr", "dwm", "csrss", "winlogon", "services", "lsass", 
         "fontdrvhost", "svchost", "System", "ctfmon", "SystemSettings", "taskhostw", 
         "RuntimeBroker", "SearchHost", "StartMenuExperienceHost", "TextInputHost", 
         "ShellHost", "SecurityHealthSystray", "SecurityHealthService", "Sysmon64", 
-        "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster"
+        "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "smss", "wininit",
+        "sppsvc", "SearchIndexer", "MsMpEng", "NisSrv", "MpDefenderCoreService", 
+        "DefenderSessionHelper", "MoUsoCoreWorker"
     )
     foreach ($wc in $windowsCore) {
         $services.Add([PSCustomObject]@{
             ProcessName = $wc
             Category    = "Windows Subsystem"
-            Reason      = "Core Windows shell and booster environment"
+            Reason      = "Core Windows subsystem & security daemon (Protected)"
         })
     }
 

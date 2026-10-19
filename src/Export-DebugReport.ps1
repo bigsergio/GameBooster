@@ -1,4 +1,4 @@
-# ============================================================================
+﻿# ============================================================================
 # Game Booster v1.0 - Diagnostic & System Crash Reporter
 # Automatically aggregates System Reboots (Event 41/1001), App Crashes,
 # and Game Booster logs into a single shareable report.

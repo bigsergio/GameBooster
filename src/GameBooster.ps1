@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# Game Mode Booster v1.0 PRO
+# Game Mode Booster v1.2 PRO
 # Unified Gaming Performance Suite & High-Refresh Optimizer
 # Clean, Autonomous, Zero-Telemetry & GitHub-Ready
 # ============================================================================
@@ -17,6 +17,44 @@ param(
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms -ErrorAction SilentlyContinue
+
+# Set explicit Windows AppUserModelID to decouple from powershell.exe and ensure custom taskbar icon
+try {
+    Add-Type -TypeDefinition @"
+    using System;
+    using System.Runtime.InteropServices;
+
+    public class ShellIconHelper {
+        [DllImport("shell32.dll", SetLastError = true)]
+        public static extern int SetCurrentProcessExplicitAppUserModelID([MarshalAs(UnmanagedType.LPWStr)] string AppID);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        public static extern IntPtr LoadImage(IntPtr hinst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
+
+        public const uint WM_SETICON = 0x0080;
+        public const int ICON_SMALL = 0;
+        public const int ICON_BIG = 1;
+        public const uint IMAGE_ICON = 1;
+        public const uint LR_LOADFROMFILE = 0x0010;
+
+        public static void SetWindowIcons(IntPtr hWnd, string iconPath) {
+            try {
+                if (System.IO.File.Exists(iconPath)) {
+                    IntPtr hBig = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+                    IntPtr hSmall = LoadImage(IntPtr.Zero, iconPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+                    if (hBig != IntPtr.Zero) SendMessage(hWnd, WM_SETICON, (IntPtr)ICON_BIG, hBig);
+                    if (hSmall != IntPtr.Zero) SendMessage(hWnd, WM_SETICON, (IntPtr)ICON_SMALL, hSmall);
+                }
+            } catch {}
+        }
+    }
+"@ -ErrorAction SilentlyContinue
+
+    [ShellIconHelper]::SetCurrentProcessExplicitAppUserModelID("GameBooster.Suite.PRO") | Out-Null
+} catch {}
 
 # Dynamic Root Directory Resolution (Zero hardcoded paths)
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
@@ -41,7 +79,7 @@ function Write-AppLog([string]$msg, [string]$level = "INFO") {
     try { Add-Content -Path $LogFile -Value $line -Force -ErrorAction SilentlyContinue } catch {}
 }
 
-Write-AppLog "Initializing Game Booster v1.1 PRO..."
+Write-AppLog "Initializing Game Booster v1.2 PRO..."
 
 # Load Core Modules
 try {
@@ -115,7 +153,7 @@ Write-AppLog "Building Modern WPF Interface..."
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Mode Booster v1.1 PRO"
+        Title="Game Mode Booster v1.2 PRO"
         Height="840" Width="1280" MinWidth="1080" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
@@ -408,7 +446,7 @@ Write-AppLog "Building Modern WPF Interface..."
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="GAME BOOSTER" FontSize="18" FontWeight="ExtraBold" Foreground="#10B981" Margin="0,0,6,0"/>
                             <Border Background="#047857" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="v1.1 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                <TextBlock Text="v1.2 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Ultra Low-Latency Gaming Engine | Multi-Platform Auto-Detector | Standby Cleaner" FontSize="11" Foreground="#94A3B8"/>
@@ -1142,7 +1180,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.1 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.2 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock Name="TxtMemorySummary" Grid.Column="1" Text="Standby RAM: Ready | Timer: 0.5ms" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
             </Grid>
         </Border>
@@ -1280,6 +1318,14 @@ $script:WhitelistList  = [System.Collections.ObjectModel.ObservableCollection[PS
 $script:RestoreList    = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
 $script:CrashList      = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
 $script:SessionWhitelist = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+$script:CriticalOsProcesses = [System.Collections.Generic.HashSet[string]]::new(
+    @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
+      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
+      "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
+      "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr"),
+    [System.StringComparer]::OrdinalIgnoreCase
+)
 
 $gridProcesses.ItemsSource      = $script:ProcessList
 $gridGameLibrary.ItemsSource    = $script:GameList
@@ -1300,6 +1346,16 @@ if ($icoCandidate) {
     try {
         $window.Icon = [System.Windows.Media.Imaging.BitmapFrame]::Create([System.Uri]::new($icoCandidate))
     } catch {}
+
+    $window.Add_SourceInitialized({
+        try {
+            $helper = New-Object System.Windows.Interop.WindowInteropHelper($window)
+            $hwnd = $helper.Handle
+            if ($hwnd -and $icoCandidate) {
+                [ShellIconHelper]::SetWindowIcons($hwnd, $icoCandidate)
+            }
+        } catch {}
+    })
 }
 
 # ---------------------------------------------------------------------------
@@ -1361,6 +1417,11 @@ function Reload-ProcessGrid {
     $cfg = Get-AppConfig
     $wl = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     
+    # 0. Hardcoded Critical Windows OS Subsystems (Absolute safeguard)
+    if ($script:CriticalOsProcesses) {
+        foreach ($cp in $script:CriticalOsProcesses) { $wl.Add($cp) | Out-Null }
+    }
+
     # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons, Windows Subsystems)
     $essentialServices = Get-EssentialGamingServicesWhitelist
     foreach ($es in $essentialServices) { $wl.Add($es) | Out-Null }
@@ -1382,7 +1443,9 @@ function Reload-ProcessGrid {
     }
 
     $script:ProcessList.Clear()
-    $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID -and $_.ProcessName -ne "Idle" -and $_.ProcessName -ne "System" }
+    $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { 
+        $_.Id -ne $PID -and -not $script:CriticalOsProcesses.Contains($_.ProcessName) 
+    }
     
     # Filter out whitelisted items first
     $filteredProcs = $rawProcs | Where-Object { -not $wl.Contains($_.ProcessName) }
@@ -1642,12 +1705,14 @@ $btnActivateGameMode.Add_Click({
     $freedRAM = 0
 
     foreach ($item in $targets) {
+        if ($script:CriticalOsProcesses -and $script:CriticalOsProcesses.Contains($item.Name)) { continue }
+
         $pidsToKill = if ($item.Pids) { @($item.Pids) } else { @($item.Id) }
         $appFreedRAM = 0
         foreach ($pidVal in $pidsToKill) {
             try {
                 $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
-                if ($p) {
+                if ($p -and (-not $script:CriticalOsProcesses -or -not $script:CriticalOsProcesses.Contains($p.ProcessName))) {
                     $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
                     $appFreedRAM += $pRam
                     Stop-Process -Id $pidVal -Force -ErrorAction SilentlyContinue
@@ -2072,20 +2137,40 @@ $btnCleanShaders.Add_Click({
 
 # Network Latency Radar (Feature 8)
 function Run-RadarPing {
-    $script:RadarList.Clear()
-    $pings = Test-GamingRadarPing
-    foreach ($p in $pings) {
-        $script:RadarList.Add([PSCustomObject]@{
-            Region   = $p.Cluster
-            Location = $p.Region
-            Host     = $p.Host
-            PingMs   = $p.PingMs
-            Status   = if ($p.Status) { $p.Status } else { "OK" }
-        })
-    }
-    $fastest = $pings | Sort-Object PingMs | Select-Object -First 1
-    if ($fastest) {
-        $txtStatusBar.Text = "Server Ping Radar scan finished. Fastest: $($fastest.Cluster) ($($fastest.PingMs) ms)"
+    try {
+        if ($btnPingRadarNow) {
+            $btnPingRadarNow.IsEnabled = $false
+            $btnPingRadarNow.Content = "⏳ Pinging Servers..."
+        }
+        $txtStatusBar.Text = "Pinging gaming clusters (Valve, Riot, Blizzard, AWS, DNS)..."
+
+        $pings = Test-GamingRadarPing
+        $script:RadarList.Clear()
+        foreach ($p in $pings) {
+            $script:RadarList.Add([PSCustomObject]@{
+                Region   = $p.Cluster
+                Location = $p.Region
+                Host     = $p.Host
+                PingMs   = if ($p.PingMs -ge 0) { $p.PingMs } else { "-" }
+                Latency  = $p.Latency
+                Status   = $p.Quality
+            })
+        }
+        $validPings = @($pings | Where-Object { $_.PingMs -gt 0 } | Sort-Object PingMs)
+        if ($validPings.Count -gt 0) {
+            $fastest = $validPings[0]
+            $txtStatusBar.Text = "Server Ping Radar scan finished. Fastest: $($fastest.Cluster) ($($fastest.PingMs) ms)"
+        } else {
+            $txtStatusBar.Text = "Server Ping Radar scan finished (Servers offline or ICMP filtered)."
+        }
+    } catch {
+        Write-AppLog "Radar scan error: $_" "WARN"
+        $txtStatusBar.Text = "Server Ping Radar scan completed with network warnings."
+    } finally {
+        if ($btnPingRadarNow) {
+            $btnPingRadarNow.IsEnabled = $true
+            $btnPingRadarNow.Content = "🎯 Ping All Servers Now"
+        }
     }
 }
 
@@ -2093,7 +2178,7 @@ $btnPingRadarNow.Add_Click({ Run-RadarPing })
 
 # Auto-Radar Timer
 $script:radarTimer = New-Object System.Windows.Threading.DispatcherTimer
-$script:radarTimer.Interval = [TimeSpan]::FromSeconds(5)
+$script:radarTimer.Interval = [TimeSpan]::FromSeconds(15)
 $script:radarTimer.Add_Tick({
     if ($chkAutoRadar.IsChecked) {
         Run-RadarPing

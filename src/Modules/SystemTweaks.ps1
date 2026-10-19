@@ -117,9 +117,8 @@ function Set-TcpNoDelay([bool]$enable) {
 
     $appliedCount = 0
     foreach ($k in $subKeys) {
-        $p = Get-ItemProperty -Path $k.PSPath -ErrorAction SilentlyContinue
-        # Target active connected interfaces with DhcpIPAddress or IPAddress
-        if ($p.DhcpIPAddress -or $p.IPAddress) {
+        # Target all valid interface GUIDs
+        if ($k.PSChildName -match "^\{[a-f0-9\-]{36}\}$") {
             try {
                 if ($enable) {
                     Set-ItemProperty -Path $k.PSPath -Name "TcpAckFrequency" -Value 1 -Type DWord -Force -ErrorAction SilentlyContinue

@@ -1,12 +1,12 @@
 ﻿# ============================================================================
-# Game Booster v1.0 - Module: Gaming Server Latency Radar
+# Game Booster v1.2 - Module: Gaming Server Latency Radar
 # Asynchronous multi-target ping grid for Valve, Riot, Blizzard, AWS, and DNS
 # ============================================================================
 
 function Get-LocalGatewayIp {
     try {
         $gw = (Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue | Select-Object -First 1).NextHop
-        if ($gw) { return $gw }
+        if ($gw -and $gw -ne "0.0.0.0") { return $gw }
     } catch {}
     return "192.168.1.1"
 }
@@ -17,12 +17,13 @@ function Get-GamingRadarEndpoints {
         [PSCustomObject]@{ Cluster = "Local Gateway (Router)"; Host = $gw; Region = "LAN"; Type = "Router" },
         [PSCustomObject]@{ Cluster = "Cloudflare Primary"; Host = "1.1.1.1"; Region = "Global"; Type = "DNS" },
         [PSCustomObject]@{ Cluster = "Google Primary"; Host = "8.8.8.8"; Region = "Global"; Type = "DNS" },
-        [PSCustomObject]@{ Cluster = "Valve / CS2 EU Central"; Host = "155.133.243.1"; Region = "Frankfurt"; Type = "Valve" },
-        [PSCustomObject]@{ Cluster = "Valve / CS2 EU East"; Host = "155.133.238.1"; Region = "Vienna"; Type = "Valve" },
+        [PSCustomObject]@{ Cluster = "Valve / CS2 EU Central"; Host = "162.254.197.1"; Region = "Frankfurt"; Type = "Valve" },
         [PSCustomObject]@{ Cluster = "Valve / CS2 EU West"; Host = "155.133.248.1"; Region = "London"; Type = "Valve" },
-        [PSCustomObject]@{ Cluster = "Riot Games EU Central"; Host = "104.160.143.212"; Region = "Frankfurt"; Type = "Riot" },
-        [PSCustomObject]@{ Cluster = "Riot Games EU West"; Host = "104.160.141.3"; Region = "Paris"; Type = "Riot" },
-        [PSCustomObject]@{ Cluster = "AWS Europe Central"; Host = "52.95.2.0"; Region = "Frankfurt"; Type = "AWS" }
+        [PSCustomObject]@{ Cluster = "Valve / CS2 EU North"; Host = "155.133.252.1"; Region = "Stockholm"; Type = "Valve" },
+        [PSCustomObject]@{ Cluster = "Blizzard / Battle.net EU"; Host = "37.244.54.10"; Region = "Paris"; Type = "Blizzard" },
+        [PSCustomObject]@{ Cluster = "AWS Europe Central"; Host = "dynamodb.eu-central-1.amazonaws.com"; Region = "Frankfurt"; Type = "AWS" },
+        [PSCustomObject]@{ Cluster = "AWS Europe West"; Host = "dynamodb.eu-west-1.amazonaws.com"; Region = "Ireland"; Type = "AWS" },
+        [PSCustomObject]@{ Cluster = "Riot Games EU Central"; Host = "104.160.143.212"; Region = "Frankfurt"; Type = "Riot" }
     )
 }
 
@@ -30,22 +31,37 @@ function Test-GamingRadarPing {
     param([int]$TimeoutMs = 600)
     $endpoints = Get-GamingRadarEndpoints
     $results = [System.Collections.Generic.List[PSCustomObject]]::new()
-    $tasks = @()
+    $tasks = [System.Collections.Generic.List[PSCustomObject]]::new()
 
     foreach ($ep in $endpoints) {
-        $p = New-Object System.Net.NetworkInformation.Ping
-        $task = $p.SendPingAsync($ep.Host, $TimeoutMs)
-        $tasks += [PSCustomObject]@{
-            Endpoint = $ep
-            PingObj  = $p
-            Task     = $task
+        try {
+            $p = New-Object System.Net.NetworkInformation.Ping
+            $task = $p.SendPingAsync($ep.Host, $TimeoutMs)
+            $tasks.Add([PSCustomObject]@{
+                Endpoint = $ep
+                PingObj  = $p
+                Task     = $task
+            })
+        } catch {
+            $results.Add([PSCustomObject]@{
+                Cluster  = $ep.Cluster
+                Region   = $ep.Region
+                Host     = $ep.Host
+                PingMs   = -1
+                Latency  = "FAILED"
+                Quality  = "OFFLINE"
+            })
         }
     }
 
     foreach ($t in $tasks) {
         try {
-            $reply = $t.Task.GetAwaiter().GetResult()
-            $ms = if ($reply.Status -eq "Success") { $reply.RoundtripTime } else { -1 }
+            if ($t.Task.Wait($TimeoutMs + 300)) {
+                $reply = $t.Task.Result
+                $ms = if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) { [int]$reply.RoundtripTime } else { -1 }
+            } else {
+                $ms = -1
+            }
             $statusStr = if ($ms -ge 0) { "${ms} ms" } else { "TIMEOUT" }
             $quality = if ($ms -lt 0) { "OFFLINE" } elseif ($ms -le 25) { "EXCELLENT" } elseif ($ms -le 55) { "GOOD" } else { "HIGH" }
 
@@ -67,7 +83,7 @@ function Test-GamingRadarPing {
                 Quality  = "OFFLINE"
             })
         } finally {
-            $t.PingObj.Dispose()
+            try { $t.PingObj.Dispose() } catch {}
         }
     }
 
