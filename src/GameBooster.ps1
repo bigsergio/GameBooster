@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# Game Mode Booster v1.2 PRO
+# Game Mode Booster v1.2.1 PRO
 # Unified Gaming Performance Suite & High-Refresh Optimizer
 # Clean, Autonomous, Zero-Telemetry & GitHub-Ready
 # ============================================================================
@@ -68,6 +68,9 @@ $LogFile = Join-Path $RootDir "gamebooster.log"
 $SessionFile = Join-Path $RootDir "last_session.json"
 $TrayPidFile = Join-Path $RootDir "tray.pid"
 
+$script:AppVersion = "1.2.1"
+$script:GitHubRepo = "bigsergio/GameBooster"
+
 # Ensure config.json exists from template if needed
 if (-not (Test-Path $ConfigFile) -and (Test-Path $ConfigTemplate)) {
     try { Copy-Item -Path $ConfigTemplate -Destination $ConfigFile -Force } catch {}
@@ -80,7 +83,7 @@ function Write-AppLog([string]$msg, [string]$level = "INFO") {
     try { Add-Content -Path $LogFile -Value $line -Force -ErrorAction SilentlyContinue } catch {}
 }
 
-Write-AppLog "Initializing Game Booster v1.2 PRO..."
+Write-AppLog "Initializing Game Booster v$script:AppVersion PRO..."
 
 # Load Core Modules
 try {
@@ -116,6 +119,7 @@ function Get-AppConfig {
             enabled = $false
             pollIntervalSec = 3
             monitoredGames = @("cod", "bootstrapper", "BlackOps6", "Wow", "WowClassic", "cs2", "Valorant")
+            autoRestoreOnGameExit = $true
         }
         hudPosition = [PSCustomObject]@{ x = 100; y = 100; width = 1200; height = 600; cols = 120; rows = 30; activePreset = "tri_pane" }
     }
@@ -319,13 +323,19 @@ if ($Osd) {
     exit 0
 }
 
+if ($TweakCheck) {
+    $t = Get-GamingTweaksStatus
+    $t | Format-List
+    exit 0
+}
+
 # Launch GUI Dashboard
 Write-AppLog "Building Modern WPF Interface..."
 
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Mode Booster v1.2 PRO"
+        Title="Game Mode Booster v1.2.1 PRO"
         Height="840" Width="1280" MinWidth="1080" MinHeight="700"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
@@ -618,7 +628,10 @@ Write-AppLog "Building Modern WPF Interface..."
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="GAME BOOSTER" FontSize="18" FontWeight="ExtraBold" Foreground="#10B981" Margin="0,0,6,0"/>
                             <Border Background="#047857" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="v1.2 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                <TextBlock Text="v1.2.1 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
+                            </Border>
+                            <Border Name="PillUpdateAvailable" Visibility="Collapsed" Background="#1E3A8A" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center" Cursor="Hand" ToolTip="New version available! Click to download latest release on GitHub">
+                                <TextBlock Name="TxtUpdateVersion" Text="🚀 Update Available" FontSize="10" FontWeight="Bold" Foreground="#60A5FA"/>
                             </Border>
                         </StackPanel>
                         <TextBlock Text="Ultra Low-Latency Gaming Engine | Multi-Platform Auto-Detector | Standby Cleaner" FontSize="11" Foreground="#94A3B8"/>
@@ -780,7 +793,8 @@ Write-AppLog "Building Modern WPF Interface..."
                                     <TextBlock Text="⚡ AUTO-WATCHER (ZERO-CLICK GAME OPTIMIZER): " FontWeight="Bold" Foreground="#38BDF8" FontSize="12"/>
                                     <TextBlock Name="TxtTab2WatcherStatus" Text="OFF" FontWeight="ExtraBold" Foreground="#94A3B8" FontSize="12"/>
                                 </StackPanel>
-                                <TextBlock Text="Automatically closes selected background apps, flushes standby RAM, and applies CPU priority the moment any listed game starts. Restores all apps when you exit." Foreground="#94A3B8" FontSize="11"/>
+                                <TextBlock Text="Automatically closes selected background apps, flushes standby RAM, and applies CPU priority the moment any listed game starts." Foreground="#94A3B8" FontSize="11"/>
+                                <CheckBox Name="ChkAutoRestoreOnExit" Content="Auto-restore closed apps when game exits" IsChecked="True" Foreground="#CBD5E1" FontSize="11" Margin="0,4,0,0" ToolTip="When checked, apps closed during Boost will be automatically reopened when your game exits. Uncheck if you prefer background apps to stay closed."/>
                             </StackPanel>
                             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                 <Button Name="BtnTab2ToggleWatcher" Content="▶ Enable Auto-Watcher" Background="#059669" Foreground="#FFFFFF" Height="34" Padding="16,0" FontWeight="ExtraBold" ToolTip="Start background daemon to automatically close apps and optimize your PC the moment any listed game starts"/>
@@ -1373,9 +1387,11 @@ Write-AppLog "Building Modern WPF Interface..."
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.2 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
-                <TextBlock Name="TxtMemorySummary" Grid.Column="1" Text="Standby RAM: Ready | Timer: 0.5ms" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.2.1 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtMemorySummary" Grid.Column="1" Text="Standby RAM: Ready | Timer: 0.5ms" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <Button Name="BtnCheckUpdates" Grid.Column="2" Content="🔄 Check Updates" Background="#1E293B" Foreground="#94A3B8" BorderBrush="#334155" FontSize="10" Padding="8,2" ToolTip="Check GitHub for the latest GameBooster release"/>
             </Grid>
         </Border>
     </Grid>
@@ -1395,6 +1411,8 @@ $pillTrayStatus            = $window.FindName("PillTrayStatus")
 $dotWatcher                = $window.FindName("DotWatcher")
 $txtWatcherStatus          = $window.FindName("TxtWatcherStatus")
 $pillWatcherStatus         = $window.FindName("PillWatcherStatus")
+$pillUpdateAvailable       = $window.FindName("PillUpdateAvailable")
+$txtUpdateVersion          = $window.FindName("TxtUpdateVersion")
 $mainTabs                  = $window.FindName("MainTabs")
 $btnToggleWatcher          = $window.FindName("BtnToggleWatcher")
 $btnRefreshAll             = $window.FindName("BtnRefreshAll")
@@ -1434,6 +1452,7 @@ $cmbCpuPriority            = $window.FindName("CmbCpuPriority")
 $cmbCpuAffinity            = $window.FindName("CmbCpuAffinity")
 $txtGameCompanion          = $window.FindName("TxtGameCompanion")
 $chkAutoOsd                = $window.FindName("ChkAutoOsd")
+$chkAutoRestoreOnExit      = $window.FindName("ChkAutoRestoreOnExit")
 $btnSaveGameProfile        = $window.FindName("BtnSaveGameProfile")
 $btnReloadGameProfile      = $window.FindName("BtnReloadGameProfile")
 $btnResetGameProfile       = $window.FindName("BtnResetGameProfile")
@@ -1508,6 +1527,7 @@ $txtDiagnosticReport       = $window.FindName("TxtDiagnosticReport")
 # Status Bar
 $txtStatusBar              = $window.FindName("TxtStatusBar")
 $txtMemorySummary          = $window.FindName("TxtMemorySummary")
+$btnCheckUpdates           = $window.FindName("BtnCheckUpdates")
 
 # Observable Collections
 $script:ProcessList    = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
@@ -2405,6 +2425,32 @@ $btnResetGameProfile.Add_Click({
     }
 })
 
+# Wire Auto-Restore on Game Exit Checkbox
+if ($chkAutoRestoreOnExit) {
+    try {
+        $cfg = Get-AppConfig
+        $restoreVal = if ($cfg.watcherSettings -and $null -ne $cfg.watcherSettings.autoRestoreOnGameExit) { [bool]$cfg.watcherSettings.autoRestoreOnGameExit } else { $true }
+        $chkAutoRestoreOnExit.IsChecked = $restoreVal
+    } catch {
+        $chkAutoRestoreOnExit.IsChecked = $true
+    }
+
+    $chkAutoRestoreOnExit.Add_Checked({
+        $c = Get-AppConfig
+        if (-not $c.watcherSettings) { $c | Add-Member -MemberType NoteProperty -Name "watcherSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.watcherSettings | Add-Member -MemberType NoteProperty -Name "autoRestoreOnGameExit" -Value $true -Force
+        Save-AppConfig $c | Out-Null
+        $txtStatusBar.Text = "Auto-restore on game exit enabled."
+    })
+    $chkAutoRestoreOnExit.Add_Unchecked({
+        $c = Get-AppConfig
+        if (-not $c.watcherSettings) { $c | Add-Member -MemberType NoteProperty -Name "watcherSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.watcherSettings | Add-Member -MemberType NoteProperty -Name "autoRestoreOnGameExit" -Value $false -Force
+        Save-AppConfig $c | Out-Null
+        $txtStatusBar.Text = "Auto-restore on game exit disabled (closed apps will remain closed)."
+    })
+}
+
 # ---------------------------------------------------------------------------
 # TAB 3: 1-CLICK TWEAKS, STANDBY PURGE, SHADER CLEANER & RADAR (Features 2, 3, 4, 8, 10)
 # ---------------------------------------------------------------------------
@@ -3156,6 +3202,97 @@ $btnLaunchTrayCompanion.Add_Click({
     }
 })
 
+# ---------------------------------------------------------------------------
+# IN-APP GITHUB UPDATE CHECKER (Asynchronous & Non-Blocking)
+# ---------------------------------------------------------------------------
+function Check-AppUpdateAsync([bool]$silent = $true) {
+    if ($btnCheckUpdates) {
+        $btnCheckUpdates.IsEnabled = $false
+        $btnCheckUpdates.Content = "⏳ Checking..."
+    }
+
+    [System.Threading.ThreadPool]::QueueUserWorkItem({
+        param($state)
+        $isSilent = [bool]$state
+        try {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+            $headers = @{ "User-Agent" = "GameBooster-v$script:AppVersion" }
+            $apiUrl = "https://api.github.com/repos/$script:GitHubRepo/releases/latest"
+            $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 6 -ErrorAction Stop
+
+            $remoteTag = if ($release.tag_name) { [string]$release.tag_name } else { "" }
+            $cleanRemote = ($remoteTag -replace '[^\d\.]', '').Trim('.')
+            $cleanLocal = ($script:AppVersion -replace '[^\d\.]', '').Trim('.')
+
+            # Parse Version safely
+            $rParts = @($cleanRemote.Split('.'))
+            while ($rParts.Count -lt 2) { $rParts += "0" }
+            $lParts = @($cleanLocal.Split('.'))
+            while ($lParts.Count -lt 2) { $lParts += "0" }
+
+            $remoteVer = [Version]::new(($rParts -join '.'))
+            $localVer = [Version]::new(($lParts -join '.'))
+
+            $hasUpdate = $remoteVer -gt $localVer
+
+            $window.Dispatcher.Invoke([Action]{
+                if ($hasUpdate) {
+                    if ($pillUpdateAvailable) {
+                        $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Visible
+                    }
+                    if ($txtUpdateVersion) {
+                        $txtUpdateVersion.Text = "🚀 Update: $remoteTag"
+                    }
+                    if ($txtStatusBar) {
+                        $txtStatusBar.Text = "Update available: $remoteTag (Click update pill to download)"
+                    }
+                    if (-not $isSilent) {
+                        $msg = "A new version of Game Booster is available!`n`nInstalled Version: v$script:AppVersion`nLatest Release: $remoteTag`n`nWould you like to open the GitHub Releases page to download it?"
+                        $res = [System.Windows.MessageBox]::Show($window, $msg, "Game Booster Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Information)
+                        if ($res -eq [System.Windows.MessageBoxResult]::Yes) {
+                            $targetUrl = if ($release.html_url) { $release.html_url } else { "https://github.com/$script:GitHubRepo/releases/latest" }
+                            [System.Diagnostics.Process]::Start($targetUrl) | Out-Null
+                        }
+                    }
+                } else {
+                    if ($pillUpdateAvailable) {
+                        $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Collapsed
+                    }
+                    if (-not $isSilent) {
+                        [System.Windows.MessageBox]::Show($window, "You are using the latest version of Game Booster (v$script:AppVersion).", "Game Booster Update", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+                    }
+                }
+            })
+        } catch {
+            Write-AppLog "Update check error: $_" "WARN"
+            $window.Dispatcher.Invoke([Action]{
+                if (-not $isSilent) {
+                    [System.Windows.MessageBox]::Show($window, "Unable to check for updates right now.`nPlease check your internet connection and try again.", "Update Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+                }
+            })
+        } finally {
+            $window.Dispatcher.Invoke([Action]{
+                if ($btnCheckUpdates) {
+                    $btnCheckUpdates.IsEnabled = $true
+                    $btnCheckUpdates.Content = "🔄 Check Updates"
+                }
+            })
+        }
+    }, $silent) | Out-Null
+}
+
+if ($btnCheckUpdates) {
+    $btnCheckUpdates.Add_Click({
+        Check-AppUpdateAsync -silent $false
+    })
+}
+
+if ($pillUpdateAvailable) {
+    $pillUpdateAvailable.Add_MouseLeftButtonDown({
+        [System.Diagnostics.Process]::Start("https://github.com/$script:GitHubRepo/releases/latest") | Out-Null
+    })
+}
+
 # Populate all views on startup
 Reload-ProcessGrid
 Reload-GameLibraryGrid
@@ -3193,6 +3330,9 @@ $script:daemonTimer.Add_Tick({
     Update-StandbyDisplay
 })
 $script:daemonTimer.Start()
+
+# Background silent update check
+Check-AppUpdateAsync -silent $true
 
 # Show Window
 $window.ShowDialog() | Out-Null

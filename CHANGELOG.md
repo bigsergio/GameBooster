@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] - 2026-10-19
 
+### 🚀 In-App GitHub Update Checker
+- **Asynchronous Release Notification:** Added background GitHub Releases API check (`https://api.github.com/repos/bigsergio/GameBooster/releases/latest`) on startup and via manual button. Queries asynchronously via `ThreadPool` without impacting UI responsiveness or gaming framerates.
+- **Interactive Header Notification Pill:** When a new release is published on GitHub, a prominent blue pill (`🚀 Update: v...`) illuminates in the dashboard header. Clicking it opens the GitHub release page directly in the default web browser.
+- **Manual "Check Updates" Button:** Added a dedicated `🔄 Check Updates` button in the bottom status bar with informative feedback dialogues and error isolation for offline use.
+
+### ⚙️ Configurable Auto-Restore on Game Exit
+- **User Preference Toggle:** Added a dedicated checkbox in the Tab 2 Auto-Watcher banner (`Auto-restore closed apps when game exits`) allowing users to choose whether closed background apps should be automatically restarted when their game exits or remain closed for maximum desktop cleanliness.
+- **Watcher & Tray Daemon Integration:** Both `GameWatcher.ps1` and `TrayBooster.ps1` respect the `autoRestoreOnGameExit` configuration key before invoking session restoration, with full logging and system tray balloon notifications.
+
+### 🎮 Multi-Companion Process Support
+- **Comma & Semicolon Separated Companions:** The Tab 2 per-game companion field now accepts multiple binaries separated by commas or semicolons (e.g. `Discord, obs64, C:\Tools\Crosshair.exe`), auto-launching all configured companions concurrently when the monitored game starts.
+
 ### 🤖 Auto-Watcher & Background Boost Execution Fix
 - **`Start-Process -Wait` Syntax Fix:** Fixed an argument placement bug in `GameWatcher.ps1` and `TrayBooster.ps1` where `"-Wait"` was passed inside `-ArgumentList` to `powershell.exe`. This caused PowerShell to abort with an unknown cmdlet error upon game detection, preventing automatic bloat closure from running. `-Wait` is now passed as a switch parameter directly on `Start-Process`, ensuring Auto-Watcher executes Game Mode boost immediately when games start and restores applications when games exit.
 

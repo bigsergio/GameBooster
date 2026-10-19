@@ -343,11 +343,26 @@ $watcherTimer.Add_Tick({
     }
     elseif (-not $gameProc -and $script:isGaming) {
         $script:isGaming = $false
-        Write-TrayLog "Game session ended. Initiating session restore..."
-        $notifyIcon.ShowBalloonTip(3000, "Game Session Ended", "Restoring previous session applications...", [System.Windows.Forms.ToolTipIcon]::Info)
+        Write-TrayLog "Game session ended."
 
-        # Restore closed applications
-        Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
+        $shouldRestore = $true
+        try {
+            if (Test-Path $ConfigFile) {
+                $rawCfg = Get-Content -Raw -Path $ConfigFile -Encoding UTF8 | ConvertFrom-Json
+                if ($rawCfg.watcherSettings -and $null -ne $rawCfg.watcherSettings.autoRestoreOnGameExit) {
+                    $shouldRestore = [bool]$rawCfg.watcherSettings.autoRestoreOnGameExit
+                }
+            }
+        } catch {}
+
+        if ($shouldRestore) {
+            Write-TrayLog "Initiating session restore..."
+            $notifyIcon.ShowBalloonTip(3000, "Game Session Ended", "Restoring previous session applications...", [System.Windows.Forms.ToolTipIcon]::Info)
+            Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
+        } else {
+            Write-TrayLog "Auto-restore disabled in settings. Closed apps remain closed."
+            $notifyIcon.ShowBalloonTip(3000, "Game Session Ended", "Closed apps kept closed as configured.", [System.Windows.Forms.ToolTipIcon]::Info)
+        }
     }
 })
 

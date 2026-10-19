@@ -141,13 +141,29 @@ try {
         }
         elseif (-not $gameProc -and $isGaming) {
             $isGaming = $false
-            Write-Host "`n[!] GAME SESSION ENDED ($($gameProc.ProcessName))!" -ForegroundColor Yellow
-            Write-WatcherLog "Game exited. Initiating session restoration..."
+            Write-Host "`n[!] GAME SESSION ENDED!" -ForegroundColor Yellow
+            Write-WatcherLog "Game exited."
 
-            Write-Host " -> Restoring applications from previous session..." -ForegroundColor Cyan
-            Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
+            $shouldRestore = $true
+            try {
+                if (Test-Path $ConfigFile) {
+                    $rawCfg = Get-Content -Raw -Path $ConfigFile -Encoding UTF8 | ConvertFrom-Json
+                    if ($rawCfg.watcherSettings -and $null -ne $rawCfg.watcherSettings.autoRestoreOnGameExit) {
+                        $shouldRestore = [bool]$rawCfg.watcherSettings.autoRestoreOnGameExit
+                    }
+                }
+            } catch {}
 
-            Write-Host "[V] All applications restored! Waiting for next gaming session...`n" -ForegroundColor Green
+            if ($shouldRestore) {
+                Write-Host " -> Restoring applications from previous session..." -ForegroundColor Cyan
+                Write-WatcherLog "Initiating session restoration..."
+                Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
+                Write-Host "[V] All applications restored! Waiting for next gaming session...`n" -ForegroundColor Green
+            } else {
+                Write-Host " -> Auto-restore disabled in settings. Closed apps will remain closed." -ForegroundColor DarkGray
+                Write-WatcherLog "Auto-restore disabled in settings. Closed apps remain closed."
+                Write-Host "[V] Game session closed. Waiting for next gaming session...`n" -ForegroundColor Green
+            }
         }
     }
 }

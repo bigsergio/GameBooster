@@ -1,8 +1,8 @@
-# ⚡ Game Booster PRO v1.2
+# ⚡ Game Booster PRO v1.2.1
 
 <div align="center">
 
-![Release](https://img.shields.io/badge/Release-v1.2.0-emerald?style=for-the-badge)
+![Release](https://img.shields.io/badge/Release-v1.2.1-emerald?style=for-the-badge)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![Platform](https://img.shields.io/badge/Architecture-x64-black?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
@@ -24,16 +24,17 @@
 
 ## 📖 Overview
 
-**Game Booster PRO v1.2** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
+**Game Booster PRO v1.2.1** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
 
 Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DLLs into game processes, Game Booster PRO is built on native Win32 APIs, modern WPF rendering, and a standalone elevated C# executable launcher (`GameBooster.exe`).
 
 > [!NOTE]
-> **What's New in v1.2.0:**
-> • **Critical Windows OS Subsystem Protection:** Hardcoded exclusion prevents terminating Windows core subsystems and security services (`csrss`, `services`, Defender, etc.), eliminating unintentional BugCheck reboots.
-> • **Crash-Proof Server Ping Radar:** Bounded asynchronous ping engine with robust error isolation across EU datacenters (Valve CS2, Blizzard, Riot, AWS).
-> • **TCP NoDelay Universal Activation:** Reliable activation across all active network adapter GUIDs on Windows 10/11.
-> • **Custom Taskbar Icon & App Bar Branding:** Explicit `AppUserModelID` and Win32 icon dispatch ensure Windows Taskbar shows the custom Game Booster logo instead of PowerShell.
+> **What's New in v1.2.1:**
+> • **In-App GitHub Update Checker:** Asynchronous, non-blocking GitHub Releases updater with direct download notifications and manual check button in the status bar.
+> • **Configurable Auto-Restore Toggle:** Easily toggle whether background apps should be automatically reopened when your game exits or kept closed.
+> • **Multi-Companion Launching:** Configure multiple background companions per game (e.g. `Discord, obs64, C:\Tools\Tracker.exe`).
+> • **Auto-Watcher Execution Fix:** Fixed `Start-Process -Wait` syntax ensuring zero-click boost triggers the exact moment games launch.
+> • **Active Game & Service Safeguards:** Monitored games and hardware RGB suites (Razer, Logitech, Corsair) are permanently protected from termination.
 > • See full details in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---

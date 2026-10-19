@@ -164,7 +164,8 @@
     "titleText": "GAME BOOSTER"
   },
   "watcherSettings": {
-    "monitoredGames": []
+    "monitoredGames": [],
+    "autoRestoreOnGameExit": true
   },
   "autoStartWith": {
     "enabled": true,
