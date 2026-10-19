@@ -13,7 +13,8 @@ param(
     [switch]$Osd,
     [switch]$Radar,
     [switch]$StandbyPurge,
-    [switch]$TweakCheck
+    [switch]$TweakCheck,
+    [switch]$Silent
 )
 
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Drawing, System.Windows.Forms -ErrorAction SilentlyContinue
@@ -144,6 +145,146 @@ if ($Radar) {
     Write-Host "Executing Network Latency & Server Radar scan..." -ForegroundColor Cyan
     $pings = Test-GamingRadarPing
     $pings | Format-Table Region, Cluster, Host, Latency, Quality -AutoSize
+    exit 0
+}
+
+if ($Boost) {
+    Write-AppLog "Headless Game Mode activation initiated by Auto-Watcher/CLI..."
+    if (-not $Silent) { Write-Host "Activating Game Mode..." -ForegroundColor Cyan }
+
+    $cfg = Get-AppConfig
+    $wl = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    # 0. Hardcoded Critical Windows OS Subsystems (Absolute safeguard)
+    $criticalOs = @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
+      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
+      "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
+      "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr")
+    foreach ($cp in $criticalOs) { $wl.Add($cp) | Out-Null }
+
+    # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons)
+    $essentialServices = Get-EssentialGamingServicesWhitelist
+    foreach ($es in $essentialServices) { $wl.Add($es) | Out-Null }
+
+    # 2. Configured user whitelist & systemProtected
+    if ($cfg.whitelist) { foreach ($w in $cfg.whitelist) { $wl.Add($w) | Out-Null } }
+    if ($cfg.systemProtected) { foreach ($sp in $cfg.systemProtected) { $wl.Add($sp) | Out-Null } }
+    if ($cfg.hardwareKeep) { foreach ($hk in $cfg.hardwareKeep) { $wl.Add($hk) | Out-Null } }
+
+    # 3. Monitored games themselves must never be closed!
+    if ($cfg.watcherSettings -and $cfg.watcherSettings.monitoredGames) {
+        foreach ($mg in $cfg.watcherSettings.monitoredGames) { $wl.Add($mg) | Out-Null }
+    }
+
+    # Get non-whitelisted running processes
+    $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { 
+        $_.Id -ne $PID -and $_.ProcessName -ne "Idle" -and $_.ProcessName -ne "System" -and -not $wl.Contains($_.ProcessName)
+    }
+
+    $closedItems = @()
+    $freedRAM = 0
+
+    $grouped = $rawProcs | Group-Object ProcessName
+    foreach ($grp in $grouped) {
+        $pName = $grp.Name
+        if ($wl.Contains($pName)) { continue }
+        if ($pName -match "RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud") { continue }
+
+        $pPath = $null
+        $pRamTotal = 0
+        $firstPid = $grp.Group[0].Id
+
+        foreach ($p in $grp.Group) {
+            try {
+                if (-not $pPath -and $p.Path) { $pPath = $p.Path }
+                $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
+                $pRamTotal += $pRam
+                Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue
+            } catch {}
+        }
+
+        $closedItems += [PSCustomObject]@{
+            Name   = $pName
+            Id     = $firstPid
+            RAM_MB = $pRamTotal
+            Path   = $pPath
+            Time   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        }
+        $freedRAM += $pRamTotal
+    }
+
+    # Save to session file for 1-click restore
+    try {
+        $sessionData = [PSCustomObject]@{
+            Timestamp    = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            ClosedApps   = $closedItems
+            TotalFreedMB = $freedRAM
+        }
+        $sessionData | ConvertTo-Json -Depth 5 | Set-Content -Path $SessionFile -Encoding UTF8 -Force
+    } catch {}
+
+    # Purge standby RAM
+    $purgeRes = Invoke-SmartMemoryPurge
+    $totalFreed = $freedRAM + [math]::Round($purgeRes.FreedGB * 1024, 0)
+
+    # Enable Ultimate Performance Power Plan
+    Enable-UltimatePerformancePlan | Out-Null
+
+    Write-AppLog "Headless Game Mode activated. Closed $($closedItems.Count) app groups, freed ${freedRAM}MB process RAM, purged $($purgeRes.FreedMB)MB standby RAM."
+    if (-not $Silent) {
+        Write-Host "Game Mode activated. Freed ${totalFreed}MB RAM." -ForegroundColor Green
+    }
+    exit 0
+}
+
+if ($Restore) {
+    Write-AppLog "Headless session restore initiated by Auto-Watcher/CLI..."
+    if (-not $Silent) { Write-Host "Restoring applications..." -ForegroundColor Cyan }
+
+    $restoredCount = 0
+    if (Test-Path $SessionFile) {
+        try {
+            $sess = Get-Content -Raw -Path $SessionFile -Encoding UTF8 | ConvertFrom-Json
+            if ($sess.ClosedApps) {
+                foreach ($app in $sess.ClosedApps) {
+                    try {
+                        if ($app.Path -and (Test-Path $app.Path)) {
+                            Start-Process $app.Path -ErrorAction SilentlyContinue
+                            $restoredCount++
+                        } elseif ($app.Name) {
+                            Start-Process $app.Name -ErrorAction SilentlyContinue
+                            $restoredCount++
+                        }
+                    } catch {}
+                }
+            }
+            Remove-Item $SessionFile -Force -ErrorAction SilentlyContinue
+        } catch {
+            Write-AppLog "Error during headless restore: $_" "WARN"
+        }
+    }
+
+    Write-AppLog "Headless session restore complete. Restored $restoredCount app(s)."
+    if (-not $Silent) {
+        Write-Host "Restored $restoredCount application(s)." -ForegroundColor Green
+    }
+    exit 0
+}
+
+if ($Hud) {
+    $hudPs = Join-Path $ScriptDir "Launch_Gaming_HUD.ps1"
+    if (Test-Path $hudPs) {
+        & $PSHostExe -NoProfile -ExecutionPolicy Bypass -File $hudPs
+    }
+    exit 0
+}
+
+if ($Osd) {
+    $osdPs = Join-Path $ScriptDir "InGame_OSD.ps1"
+    if (Test-Path $osdPs) {
+        & $PSHostExe -NoProfile -ExecutionPolicy Bypass -File $osdPs
+    }
     exit 0
 }
 
@@ -476,8 +617,8 @@ Write-AppLog "Building Modern WPF Interface..."
                             <TextBlock Name="TxtTrayStatus" Text="Tray Companion" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
-                    <!-- Auto-Watcher Pill -->
-                    <Border Name="PillWatcherStatus" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4">
+                    <!-- Auto-Watcher Pill (Clickable) -->
+                    <Border Name="PillWatcherStatus" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Cursor="Hand" ToolTip="Click to toggle Auto-Watcher background daemon">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Name="DotWatcher" Width="8" Height="8" Fill="#64748B" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Name="TxtWatcherStatus" Text="Auto-Watcher: OFF" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
@@ -591,12 +732,33 @@ Write-AppLog "Building Modern WPF Interface..."
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
                         <RowDefinition Height="*"/>
                         <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
+                    <!-- Auto-Watcher Dedicated Control Banner -->
+                    <Border Grid.Row="0" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                    <TextBlock Text="⚡ AUTO-WATCHER (ZERO-CLICK GAME OPTIMIZER): " FontWeight="Bold" Foreground="#38BDF8" FontSize="12"/>
+                                    <TextBlock Name="TxtTab2WatcherStatus" Text="OFF" FontWeight="ExtraBold" Foreground="#94A3B8" FontSize="12"/>
+                                </StackPanel>
+                                <TextBlock Text="Automatically closes selected background apps, flushes standby RAM, and applies CPU priority the moment any listed game starts. Restores all apps when you exit." Foreground="#94A3B8" FontSize="11"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Name="BtnTab2ToggleWatcher" Content="▶ Enable Auto-Watcher" Background="#059669" Foreground="#FFFFFF" Height="34" Padding="16,0" FontWeight="ExtraBold" ToolTip="Start background daemon to automatically close apps and optimize your PC the moment any listed game starts"/>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
                     <!-- Scanner Toolbar -->
-                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto"/>
                             <ColumnDefinition Width="*"/>
@@ -605,6 +767,7 @@ Write-AppLog "Building Modern WPF Interface..."
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <Button Name="BtnScanLibraries" Content="🔍 Scan Installed Libraries (Steam/Epic/Battle.net/Xbox)" Background="#0284C7" Foreground="#FFFFFF" Height="32" Padding="14,0" FontWeight="Bold" Margin="0,0,8,0"/>
                             <Button Name="BtnAddCustomGame" Content="+ Add Game / Browse Exe" Background="#10B981" Foreground="#022C22" Height="32" Padding="12,0" FontWeight="Bold" Margin="0,0,8,0"/>
+                            <Button Name="BtnToggleWatcher" Content="▶ Start Auto-Watcher" Background="#059669" Foreground="#FFFFFF" Height="32" Padding="14,0" FontWeight="ExtraBold" Margin="0,0,8,0" ToolTip="Start background daemon to automatically close apps and optimize your PC the moment any listed game starts"/>
                             <Button Name="BtnRemoveMonitored" Content="- Remove Selected" Background="#EF4444" Foreground="#FFFFFF" Height="32" Padding="12,0" Margin="0,0,8,0"/>
                             <Button Name="BtnClearAllGames" Content="Clear All" Background="#475569" Foreground="#FFFFFF" Height="32" Padding="12,0"/>
                         </StackPanel>
@@ -618,7 +781,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     </Grid>
 
                     <!-- Game List DataGrid -->
-                    <DataGrid Name="GridGameLibrary" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
+                    <DataGrid Name="GridGameLibrary" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Game Title" Binding="{Binding Title}" Width="240" FontWeight="Bold"/>
                             <DataGridTextColumn Header="Process Name (.exe)" Binding="{Binding ProcessName}" Width="180"/>
@@ -628,7 +791,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     </DataGrid>
 
                     <!-- Per-Game Profile Settings Card (Feature 1) -->
-                    <Border Grid.Row="2" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,10,0,0">
+                    <Border Grid.Row="3" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="14,10" Margin="0,10,0,0">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -1199,6 +1362,8 @@ $dotTray                   = $window.FindName("DotTray")
 $txtTrayStatus             = $window.FindName("TxtTrayStatus")
 $dotWatcher                = $window.FindName("DotWatcher")
 $txtWatcherStatus          = $window.FindName("TxtWatcherStatus")
+$pillWatcherStatus         = $window.FindName("PillWatcherStatus")
+$btnToggleWatcher          = $window.FindName("BtnToggleWatcher")
 $btnRefreshAll             = $window.FindName("BtnRefreshAll")
 $btnInstantPurge           = $window.FindName("BtnInstantPurge")
 $btnLaunchHudTop           = $window.FindName("BtnLaunchHudTop")
@@ -1221,6 +1386,8 @@ $txtSelectedRam            = $window.FindName("TxtSelectedRam")
 $btnActivateGameMode       = $window.FindName("BtnActivateGameMode")
 
 # Tab 2
+$txtTab2WatcherStatus      = $window.FindName("TxtTab2WatcherStatus")
+$btnTab2ToggleWatcher      = $window.FindName("BtnTab2ToggleWatcher")
 $btnScanLibraries          = $window.FindName("BtnScanLibraries")
 $btnAddCustomGame          = $window.FindName("BtnAddCustomGame")
 $btnRemoveMonitored        = $window.FindName("BtnRemoveMonitored")
@@ -1394,9 +1561,11 @@ function Update-DaemonIndicators {
     if ($trayProc) {
         $dotTray.Fill = [System.Windows.Media.Brushes]::LimeGreen
         $txtTrayStatus.Text = "Tray Companion: ACTIVE"
+        $txtTrayStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
     } else {
         $dotTray.Fill = [System.Windows.Media.Brushes]::SlateGray
         $txtTrayStatus.Text = "Tray Companion: OFF"
+        $txtTrayStatus.Foreground = [System.Windows.Media.Brushes]::LightGray
     }
 
     # Check Watcher
@@ -1404,9 +1573,79 @@ function Update-DaemonIndicators {
     if ($watcherProc) {
         $dotWatcher.Fill = [System.Windows.Media.Brushes]::LimeGreen
         $txtWatcherStatus.Text = "Auto-Watcher: ACTIVE"
+        $txtWatcherStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
+        if ($btnToggleWatcher) {
+            $btnToggleWatcher.Content = "⏹ Stop Auto-Watcher"
+            $btnToggleWatcher.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#DC2626")
+            $btnToggleWatcher.Foreground = [System.Windows.Media.Brushes]::White
+        }
+        if ($txtTab2WatcherStatus) {
+            $txtTab2WatcherStatus.Text = "ACTIVE (Monitoring Games)"
+            $txtTab2WatcherStatus.Foreground = [System.Windows.Media.Brushes]::LimeGreen
+        }
+        if ($btnTab2ToggleWatcher) {
+            $btnTab2ToggleWatcher.Content = "⏹ Stop Auto-Watcher"
+            $btnTab2ToggleWatcher.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#DC2626")
+            $btnTab2ToggleWatcher.Foreground = [System.Windows.Media.Brushes]::White
+        }
     } else {
         $dotWatcher.Fill = [System.Windows.Media.Brushes]::SlateGray
         $txtWatcherStatus.Text = "Auto-Watcher: OFF"
+        $txtWatcherStatus.Foreground = [System.Windows.Media.Brushes]::LightGray
+        if ($btnToggleWatcher) {
+            $btnToggleWatcher.Content = "▶ Start Auto-Watcher"
+            $btnToggleWatcher.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#059669")
+            $btnToggleWatcher.Foreground = [System.Windows.Media.Brushes]::White
+        }
+        if ($txtTab2WatcherStatus) {
+            $txtTab2WatcherStatus.Text = "OFF (Click Enable to start)"
+            $txtTab2WatcherStatus.Foreground = [System.Windows.Media.Brushes]::SlateGray
+        }
+        if ($btnTab2ToggleWatcher) {
+            $btnTab2ToggleWatcher.Content = "▶ Enable Auto-Watcher"
+            $btnTab2ToggleWatcher.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#059669")
+            $btnTab2ToggleWatcher.Foreground = [System.Windows.Media.Brushes]::White
+        }
+    }
+}
+
+function Start-GameWatcherDaemon {
+    $watcherScript = Join-Path $ScriptDir "GameWatcher.ps1"
+    if (Test-Path $watcherScript) {
+        $existing = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%GameWatcher.ps1%'" -ErrorAction SilentlyContinue
+        if (-not $existing) {
+            $psHost = if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { "pwsh.exe" } else { "powershell.exe" }
+            Start-Process $psHost -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$watcherScript`""
+            Start-Sleep -Milliseconds 400
+        }
+        Update-DaemonIndicators
+        $txtStatusBar.Text = "Auto-Watcher daemon started in background (Monitoring games)."
+    }
+}
+
+function Stop-GameWatcherDaemon {
+    $existing = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%GameWatcher.ps1%'" -ErrorAction SilentlyContinue
+    if ($existing) {
+        foreach ($p in $existing) {
+            try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    }
+    $pidFile = Join-Path $ScriptDir "watcher.pid"
+    if (Test-Path $pidFile) { Remove-Item $pidFile -Force -ErrorAction SilentlyContinue }
+    
+    Start-Sleep -Milliseconds 200
+    Update-DaemonIndicators
+    $txtStatusBar.Text = "Auto-Watcher daemon stopped."
+}
+
+function Toggle-GameWatcherDaemon {
+    $watcherProc = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%GameWatcher.ps1%'" -ErrorAction SilentlyContinue
+    if ($watcherProc) {
+        Stop-GameWatcherDaemon
+        [System.Windows.MessageBox]::Show("Auto-Watcher has been stopped.`n`nGames will no longer automatically trigger Game Mode.", "Auto-Watcher Stopped", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    } else {
+        Start-GameWatcherDaemon
+        [System.Windows.MessageBox]::Show("Auto-Watcher is now ACTIVE in the background!`n`nWhenever any of your Monitored Games are launched, Game Booster will automatically:`n• Close selected background apps`n• Flush and reclaim standby RAM`n• Auto-launch your game companion apps (e.g. Discord)`n• Restore closed apps when the game exits", "Auto-Watcher Active", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 }
 
@@ -1418,9 +1657,12 @@ function Reload-ProcessGrid {
     $wl = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     
     # 0. Hardcoded Critical Windows OS Subsystems (Absolute safeguard)
-    if ($script:CriticalOsProcesses) {
-        foreach ($cp in $script:CriticalOsProcesses) { $wl.Add($cp) | Out-Null }
-    }
+    $criticalOs = @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
+      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
+      "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
+      "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr")
+    foreach ($cp in $criticalOs) { $wl.Add($cp) | Out-Null }
 
     # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons, Windows Subsystems)
     $essentialServices = Get-EssentialGamingServicesWhitelist
@@ -1444,7 +1686,7 @@ function Reload-ProcessGrid {
 
     $script:ProcessList.Clear()
     $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { 
-        $_.Id -ne $PID -and -not $script:CriticalOsProcesses.Contains($_.ProcessName) 
+        $_.Id -ne $PID -and $_.ProcessName -ne "Idle" -and $_.ProcessName -ne "System"
     }
     
     # Filter out whitelisted items first
@@ -1704,15 +1946,23 @@ $btnActivateGameMode.Add_Click({
     $closedItems = @()
     $freedRAM = 0
 
+    $criticalOsSet = [System.Collections.Generic.HashSet[string]]::new(@(
+        "Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
+        "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+        "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
+        "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
+        "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr"
+    ), [System.StringComparer]::OrdinalIgnoreCase)
+
     foreach ($item in $targets) {
-        if ($script:CriticalOsProcesses -and $script:CriticalOsProcesses.Contains($item.Name)) { continue }
+        if ($criticalOsSet.Contains($item.Name)) { continue }
 
         $pidsToKill = if ($item.Pids) { @($item.Pids) } else { @($item.Id) }
         $appFreedRAM = 0
         foreach ($pidVal in $pidsToKill) {
             try {
                 $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
-                if ($p -and (-not $script:CriticalOsProcesses -or -not $script:CriticalOsProcesses.Contains($p.ProcessName))) {
+                if ($p -and -not $criticalOsSet.Contains($p.ProcessName)) {
                     $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
                     $appFreedRAM += $pRam
                     Stop-Process -Id $pidVal -Force -ErrorAction SilentlyContinue
@@ -1785,6 +2035,17 @@ function Reload-GameLibraryGrid {
             ExePath     = "Configured in Watcher"
         })
     }
+}
+
+# Toggle Auto-Watcher
+if ($btnToggleWatcher) {
+    $btnToggleWatcher.Add_Click({ Toggle-GameWatcherDaemon })
+}
+if ($btnTab2ToggleWatcher) {
+    $btnTab2ToggleWatcher.Add_Click({ Toggle-GameWatcherDaemon })
+}
+if ($pillWatcherStatus) {
+    $pillWatcherStatus.Add_MouseLeftButtonDown({ Toggle-GameWatcherDaemon })
 }
 
 $btnScanLibraries.Add_Click({

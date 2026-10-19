@@ -22,6 +22,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### ⚡ 1-Click Tweaks: TCP NoDelay (Nagle's Algorithm) Fix
 - **Universal Network Interface Detection:** `Set-TcpNoDelay` now iterates across all active network adapter interface GUIDs under `HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces`. Modern Windows 10/11 network stacks with dynamic DHCP or IPv6 that do not store static string IP properties in root keys are now fully supported, successfully turning the tweak badge to `ACTIVE` (green).
 
+### 🤖 Auto-Watcher & Zero-Click Gaming Daemon
+- **Dedicated Auto-Watcher Control Banner:** Added a prominent, dedicated Auto-Watcher control banner in Tab 2 ("Game Library & Profiles") with real-time status indicators (`ACTIVE (Monitoring Games)` / `OFF`) and 1-click `[ ▶ Enable Auto-Watcher ]` toggle.
+- **Interactive Header Status Pill:** Added interactive cursor and click support to `PillWatcherStatus` in the top header, allowing instant daemon toggling from any tab.
+- **Headless `-Boost` and `-Restore` CLI Handlers:** Implemented complete headless CLI handlers for `-Boost` and `-Restore` in `src/GameBooster.ps1`. When `GameWatcher.ps1` detects any monitored game launch, it activates Game Mode, closes non-essential background apps, logs to `last_session.json`, flushes standby RAM, and applies Ultimate Performance plan without opening a GUI window. When the game exits, it automatically re-launches all closed applications.
+- **Process Grid Scope Resolution:** Resolved a variable scope trap in `Reload-ProcessGrid` where pipeline execution caused `InvokeMethodOnNull`, restoring full visibility and listing of active background applications.
+- **Universal UTF-8 BOM Integrity:** Applied UTF-8 BOM encoding across all `.ps1` script files to guarantee 100% error-free parsing under Windows PowerShell 5.1.
+
 ### 🎨 Windows Taskbar & App Bar Custom Branding
 - **Native Taskbar Icon & AppUserModelID:** Resolved an issue where Windows grouped Game Booster under `powershell.exe` with a generic command terminal icon. Registered explicit `AppUserModelID` (`GameBooster.Suite.PRO`) and dispatched Win32 `WM_SETICON` (`ICON_BIG` & `ICON_SMALL`) on window initialization. The Windows Taskbar, Alt+Tab app switcher, and Title Bar now consistently display the custom high-res Game Booster cyber emblem.
 - **Recompiled Native C# Launcher:** `GameBooster.exe` recompiled to version 1.2.0.0 with embedded icon and administrator manifest.
