@@ -60,7 +60,13 @@ try {
 # Dynamic Root Directory Resolution (Zero hardcoded paths)
 $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { (Get-Location).Path }
 $RootDir = if (Test-Path (Join-Path $ScriptDir "config.json")) { $ScriptDir } else { Split-Path -Parent $ScriptDir }
-$ModulesDir = Join-Path $ScriptDir "Modules"
+$ModulesDir = if (Test-Path (Join-Path $ScriptDir "Modules")) {
+    Join-Path $ScriptDir "Modules"
+} elseif (Test-Path (Join-Path $RootDir "src\Modules")) {
+    Join-Path $RootDir "src\Modules"
+} else {
+    Join-Path $RootDir "Modules"
+}
 
 $ConfigFile = Join-Path $RootDir "config.json"
 $ConfigTemplate = Join-Path $RootDir "config.template.json"
@@ -3203,87 +3209,132 @@ $btnLaunchTrayCompanion.Add_Click({
 })
 
 # ---------------------------------------------------------------------------
-# IN-APP GITHUB UPDATE CHECKER (Asynchronous & Non-Blocking)
+# IN-APP GITHUB UPDATE CHECKER (Asynchronous & Safe Isolated Runspace)
 # ---------------------------------------------------------------------------
-function Check-AppUpdateAsync([bool]$silent = $true) {
+$script:UpdateCheckPS = $null
+$script:UpdateCheckHandle = $null
+$script:UpdateCheckSilent = $true
+
+$script:updatePollTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:updatePollTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+
+function Complete-AppUpdateCheck {
+    if (-not $script:UpdateCheckPS -or -not $script:UpdateCheckHandle) { return }
+    if (-not $script:UpdateCheckHandle.IsCompleted) { return }
+
+    $script:updatePollTimer.Stop()
+    $isSilent = $script:UpdateCheckSilent
+    $release = $null
+
+    try {
+        $results = $script:UpdateCheckPS.EndInvoke($script:UpdateCheckHandle)
+        if ($results -and $results.Count -gt 0) {
+            $release = $results[0]
+        }
+    } catch {
+        Write-AppLog "Error retrieving update check result: $_" "WARN"
+    } finally {
+        try { $script:UpdateCheckPS.Dispose() } catch {}
+        $script:UpdateCheckPS = $null
+        $script:UpdateCheckHandle = $null
+    }
+
+    if ($btnCheckUpdates) {
+        $btnCheckUpdates.IsEnabled = $true
+        $btnCheckUpdates.Content = "🔄 Check Updates"
+    }
+
+    if ($release -and $release.tag_name) {
+        $remoteTag = [string]$release.tag_name
+        $cleanRemote = ($remoteTag -replace '[^\d\.]', '').Trim('.')
+        $cleanLocal = ($script:AppVersion -replace '[^\d\.]', '').Trim('.')
+
+        $rParts = @($cleanRemote.Split('.'))
+        while ($rParts.Count -lt 2) { $rParts += "0" }
+        $lParts = @($cleanLocal.Split('.'))
+        while ($lParts.Count -lt 2) { $lParts += "0" }
+
+        $remoteVer = [Version]::new(($rParts -join '.'))
+        $localVer = [Version]::new(($lParts -join '.'))
+
+        if ($remoteVer -gt $localVer) {
+            if ($pillUpdateAvailable) {
+                $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Visible
+            }
+            if ($txtUpdateVersion) {
+                $txtUpdateVersion.Text = "🚀 Update: $remoteTag"
+            }
+            if ($txtStatusBar) {
+                $txtStatusBar.Text = "Update available: $remoteTag (Click update pill to download)"
+            }
+            if (-not $isSilent) {
+                $msg = "A new version of Game Booster is available!`n`nInstalled Version: v$script:AppVersion`nLatest Release: $remoteTag`n`nWould you like to open the GitHub Releases page to download it?"
+                $res = [System.Windows.MessageBox]::Show($window, $msg, "Game Booster Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Information)
+                if ($res -eq [System.Windows.MessageBoxResult]::Yes) {
+                    $targetUrl = if ($release.html_url) { $release.html_url } else { "https://github.com/$script:GitHubRepo/releases/latest" }
+                    [System.Diagnostics.Process]::Start($targetUrl) | Out-Null
+                }
+            }
+        } else {
+            if ($pillUpdateAvailable) {
+                $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Collapsed
+            }
+            if (-not $isSilent) {
+                [System.Windows.MessageBox]::Show($window, "You are using the latest version of Game Booster (v$script:AppVersion).", "Game Booster Update", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            }
+        }
+    } else {
+        if (-not $isSilent) {
+            [System.Windows.MessageBox]::Show($window, "Unable to check for updates right now.`nPlease check your internet connection and try again.", "Update Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        }
+    }
+}
+
+$script:updatePollTimer.Add_Tick({
+    Complete-AppUpdateCheck
+})
+
+function Start-AppUpdateCheck([bool]$silent = $true) {
+    if ($script:UpdateCheckPS) {
+        try { $script:UpdateCheckPS.Dispose() } catch {}
+        $script:UpdateCheckPS = $null
+        $script:UpdateCheckHandle = $null
+    }
+
+    $script:UpdateCheckSilent = $silent
     if ($btnCheckUpdates) {
         $btnCheckUpdates.IsEnabled = $false
         $btnCheckUpdates.Content = "⏳ Checking..."
     }
 
-    [System.Threading.ThreadPool]::QueueUserWorkItem({
-        param($state)
-        $isSilent = [bool]$state
-        try {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            $headers = @{ "User-Agent" = "GameBooster-v$script:AppVersion" }
-            $apiUrl = "https://api.github.com/repos/$script:GitHubRepo/releases/latest"
-            $release = Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 6 -ErrorAction Stop
+    try {
+        $script:UpdateCheckPS = [System.Management.Automation.PowerShell]::Create()
+        $null = $script:UpdateCheckPS.AddScript({
+            param($repo, $appVer)
+            try {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                $headers = @{ "User-Agent" = "GameBooster-v$appVer" }
+                $apiUrl = "https://api.github.com/repos/$repo/releases/latest"
+                return (Invoke-RestMethod -Uri $apiUrl -Headers $headers -TimeoutSec 5 -ErrorAction Stop)
+            } catch {
+                return $null
+            }
+        }).AddArgument($script:GitHubRepo).AddArgument($script:AppVersion)
 
-            $remoteTag = if ($release.tag_name) { [string]$release.tag_name } else { "" }
-            $cleanRemote = ($remoteTag -replace '[^\d\.]', '').Trim('.')
-            $cleanLocal = ($script:AppVersion -replace '[^\d\.]', '').Trim('.')
-
-            # Parse Version safely
-            $rParts = @($cleanRemote.Split('.'))
-            while ($rParts.Count -lt 2) { $rParts += "0" }
-            $lParts = @($cleanLocal.Split('.'))
-            while ($lParts.Count -lt 2) { $lParts += "0" }
-
-            $remoteVer = [Version]::new(($rParts -join '.'))
-            $localVer = [Version]::new(($lParts -join '.'))
-
-            $hasUpdate = $remoteVer -gt $localVer
-
-            $window.Dispatcher.Invoke([Action]{
-                if ($hasUpdate) {
-                    if ($pillUpdateAvailable) {
-                        $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Visible
-                    }
-                    if ($txtUpdateVersion) {
-                        $txtUpdateVersion.Text = "🚀 Update: $remoteTag"
-                    }
-                    if ($txtStatusBar) {
-                        $txtStatusBar.Text = "Update available: $remoteTag (Click update pill to download)"
-                    }
-                    if (-not $isSilent) {
-                        $msg = "A new version of Game Booster is available!`n`nInstalled Version: v$script:AppVersion`nLatest Release: $remoteTag`n`nWould you like to open the GitHub Releases page to download it?"
-                        $res = [System.Windows.MessageBox]::Show($window, $msg, "Game Booster Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Information)
-                        if ($res -eq [System.Windows.MessageBoxResult]::Yes) {
-                            $targetUrl = if ($release.html_url) { $release.html_url } else { "https://github.com/$script:GitHubRepo/releases/latest" }
-                            [System.Diagnostics.Process]::Start($targetUrl) | Out-Null
-                        }
-                    }
-                } else {
-                    if ($pillUpdateAvailable) {
-                        $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Collapsed
-                    }
-                    if (-not $isSilent) {
-                        [System.Windows.MessageBox]::Show($window, "You are using the latest version of Game Booster (v$script:AppVersion).", "Game Booster Update", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
-                    }
-                }
-            })
-        } catch {
-            Write-AppLog "Update check error: $_" "WARN"
-            $window.Dispatcher.Invoke([Action]{
-                if (-not $isSilent) {
-                    [System.Windows.MessageBox]::Show($window, "Unable to check for updates right now.`nPlease check your internet connection and try again.", "Update Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
-                }
-            })
-        } finally {
-            $window.Dispatcher.Invoke([Action]{
-                if ($btnCheckUpdates) {
-                    $btnCheckUpdates.IsEnabled = $true
-                    $btnCheckUpdates.Content = "🔄 Check Updates"
-                }
-            })
+        $script:UpdateCheckHandle = $script:UpdateCheckPS.BeginInvoke()
+        $script:updatePollTimer.Start()
+    } catch {
+        Write-AppLog "Failed to spawn update check: $_" "WARN"
+        if ($btnCheckUpdates) {
+            $btnCheckUpdates.IsEnabled = $true
+            $btnCheckUpdates.Content = "🔄 Check Updates"
         }
-    }, $silent) | Out-Null
+    }
 }
 
 if ($btnCheckUpdates) {
     $btnCheckUpdates.Add_Click({
-        Check-AppUpdateAsync -silent $false
+        Start-AppUpdateCheck -silent $false
     })
 }
 
@@ -3328,11 +3379,12 @@ $script:daemonTimer.Interval = [TimeSpan]::FromSeconds(4)
 $script:daemonTimer.Add_Tick({
     Update-DaemonIndicators
     Update-StandbyDisplay
+    Complete-AppUpdateCheck
 })
 $script:daemonTimer.Start()
 
 # Background silent update check
-Check-AppUpdateAsync -silent $true
+Start-AppUpdateCheck -silent $true
 
 # Show Window
 $window.ShowDialog() | Out-Null
