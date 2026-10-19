@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] - 2026-10-19
+
+### 🤖 Auto-Watcher & Background Boost Execution Fix
+- **`Start-Process -Wait` Syntax Fix:** Fixed an argument placement bug in `GameWatcher.ps1` and `TrayBooster.ps1` where `"-Wait"` was passed inside `-ArgumentList` to `powershell.exe`. This caused PowerShell to abort with an unknown cmdlet error upon game detection, preventing automatic bloat closure from running. `-Wait` is now passed as a switch parameter directly on `Start-Process`, ensuring Auto-Watcher executes Game Mode boost immediately when games start and restores applications when games exit.
+
+### 🛡️ Process Filtering & PowerShell 5.1 Compatibility
+- **PowerShell 5.1 Generic HashSet Overload Fix:** Resolved a .NET Framework constructor overload failure (`[HashSet]::new($col, $comparer)`) that silently broke the "All Non-Essential" preset button and Game Mode activation loop. All sets now safely initialize via empty constructors and explicit `.Add()` calls.
+- **Active Game Executable Exclusion:** `Reload-ProcessGrid` and `-Boost` now automatically exclude all monitored games, game profiles, and common game binaries (`cod`, `bootstrapper`, `BlackOps6`, `cod24`, `sp24`, `Wow`, `cs2`, etc.) from the process scanning grid and termination list. Running games can never be selected or killed.
+- **Windows Services & Peripheral Protection:** Background processes managed by Windows Services (e.g. `Fing.Agent`) are now safely handled via non-blocking `sc.exe stop` / `sc.exe start` and recorded in session state for clean restoration. Gaming hardware peripherals and RGB services (Razer Chroma/Synapse, Logitech G HUB, Corsair iCUE, Creative Sound Blaster, SteelSeries) are explicitly shielded from termination.
+- **CLI Interpreter Restore Guard:** Replaced bare interpreter restarts (`node`, `python`, `cmd`, `powershell`) with dedicated skip safeguards during session restoration, preventing interactive console REPL hangs.
+
+### 🎛️ UI & Workflow Enhancements
+- **Clickable Tray Companion Status Pill:** Added interactive `Cursor="Hand"`, tooltip, and click-toggle action to `PillTrayStatus` in the top header, allowing users to start and stop the Tray Companion daemon directly from the navigation bar.
+- **Dynamic Tab Auto-Refresh:** Added `MainTabs.Add_SelectionChanged` listener and a periodic 4-second background timer to automatically refresh running processes and live daemon status whenever navigating back to the Game Mode dashboard.
+
+---
+
 ## [1.2.0] - 2026-10-19
 
 ### 🛡️ Critical OS Kernel Subsystem & BugCheck Protection

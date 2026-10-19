@@ -66,7 +66,7 @@ try {
 
             # 1. Activate Game Mode Boost
             Write-Host " -> Activating Game Mode (closing background apps, flushing standby RAM)..." -ForegroundColor Cyan
-            Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent"
+            Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent" -Wait
 
             # 2. Auto-Launch Companion Apps
             # 2a. Global Companion Apps (from Tab 5)
@@ -145,7 +145,7 @@ try {
             Write-WatcherLog "Game exited. Initiating session restoration..."
 
             Write-Host " -> Restoring applications from previous session..." -ForegroundColor Cyan
-            Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent"
+            Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
 
             Write-Host "[V] All applications restored! Waiting for next gaming session...`n" -ForegroundColor Green
         }

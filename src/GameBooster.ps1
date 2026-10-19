@@ -160,7 +160,8 @@ if ($Boost) {
       "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
       "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
       "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
-      "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr")
+      "conhost", "cmd", "pwsh", "powershell", "wt", "WindowsTerminal", "GameBooster", "taskmgr",
+      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git")
     foreach ($cp in $criticalOs) { $wl.Add($cp) | Out-Null }
 
     # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons)
@@ -172,10 +173,26 @@ if ($Boost) {
     if ($cfg.systemProtected) { foreach ($sp in $cfg.systemProtected) { $wl.Add($sp) | Out-Null } }
     if ($cfg.hardwareKeep) { foreach ($hk in $cfg.hardwareKeep) { $wl.Add($hk) | Out-Null } }
 
-    # 3. Monitored games themselves must never be closed!
+    # 3. Monitored games & common gaming binaries must NEVER be closed!
     if ($cfg.watcherSettings -and $cfg.watcherSettings.monitoredGames) {
-        foreach ($mg in $cfg.watcherSettings.monitoredGames) { $wl.Add($mg) | Out-Null }
+        foreach ($mg in $cfg.watcherSettings.monitoredGames) { [void]$wl.Add($mg) }
     }
+    if ($cfg.autoStartWith -and $cfg.autoStartWith.triggerProcesses) {
+        foreach ($tp in $cfg.autoStartWith.triggerProcesses) { [void]$wl.Add($tp) }
+    }
+    if ($cfg.gameProfiles) {
+        foreach ($prop in $cfg.gameProfiles.PSObject.Properties) { [void]$wl.Add($prop.Name) }
+    }
+    $gameBinaries = @("cod", "bootstrapper", "cod24", "sp24", "BlackOps6", "Wow", "WowClassic", "Wow-64", "cs2", "csgo", "dota2", "Valorant", "RiotClientServices", "Overwatch", "FortniteClient-Win64-Shipping", "r5apex")
+    foreach ($gb in $gameBinaries) { [void]$wl.Add($gb) }
+
+    # Map running Windows services so background services (like Fing.Agent) are properly stopped and restorable
+    $serviceMap = @{}
+    try {
+        Get-CimInstance Win32_Service -Filter "State = 'Running'" -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.ProcessId) { $serviceMap[[int]$_.ProcessId] = $_.Name }
+        }
+    } catch {}
 
     # Get non-whitelisted running processes
     $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { 
@@ -189,14 +206,19 @@ if ($Boost) {
     foreach ($grp in $grouped) {
         $pName = $grp.Name
         if ($wl.Contains($pName)) { continue }
-        if ($pName -match "RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud") { continue }
+        if ($pName -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative") { continue }
 
         $pPath = $null
         $pRamTotal = 0
         $firstPid = $grp.Group[0].Id
+        $svcName = $null
 
         foreach ($p in $grp.Group) {
             try {
+                if ($serviceMap.ContainsKey([int]$p.Id)) {
+                    $svcName = $serviceMap[[int]$p.Id]
+                    & sc.exe stop $svcName | Out-Null
+                }
                 if (-not $pPath -and $p.Path) { $pPath = $p.Path }
                 $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
                 $pRamTotal += $pRam
@@ -205,11 +227,12 @@ if ($Boost) {
         }
 
         $closedItems += [PSCustomObject]@{
-            Name   = $pName
-            Id     = $firstPid
-            RAM_MB = $pRamTotal
-            Path   = $pPath
-            Time   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            Name        = $pName
+            ServiceName = $svcName
+            Id          = $firstPid
+            RAM_MB      = $pRamTotal
+            Path        = $pPath
+            Time        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
         $freedRAM += $pRamTotal
     }
@@ -249,11 +272,19 @@ if ($Restore) {
             if ($sess.ClosedApps) {
                 foreach ($app in $sess.ClosedApps) {
                     try {
+                        $skipRestore = @("node", "python", "cmd", "powershell", "pwsh", "bash", "wsl", "dashost", "midisrv", "conhost", "wt", "WindowsTerminal")
+                        if ($skipRestore -contains $app.Name) { continue }
+
+                        if ($app.ServiceName) {
+                            & sc.exe start $app.ServiceName | Out-Null
+                            $restoredCount++
+                            continue
+                        }
                         if ($app.Path -and (Test-Path $app.Path)) {
-                            Start-Process $app.Path -ErrorAction SilentlyContinue
+                            Start-Process -FilePath $app.Path -ErrorAction SilentlyContinue
                             $restoredCount++
                         } elseif ($app.Name) {
-                            Start-Process $app.Name -ErrorAction SilentlyContinue
+                            Start-Process -FilePath $app.Name -ErrorAction SilentlyContinue
                             $restoredCount++
                         }
                     } catch {}
@@ -610,11 +641,11 @@ Write-AppLog "Building Modern WPF Interface..."
                             <TextBlock Name="TxtCpuBadge" Text="Topology..." Foreground="#A78BFA" FontSize="11" FontWeight="Bold"/>
                         </StackPanel>
                     </Border>
-                    <!-- Tray & Hotkey Pill -->
-                    <Border Name="PillTrayStatus" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="0,0,8,0">
+                    <!-- Tray & Hotkey Pill (Clickable) -->
+                    <Border Name="PillTrayStatus" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="0,0,8,0" Cursor="Hand" ToolTip="Click to toggle Tray Companion background daemon (Ctrl+F11)">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Name="DotTray" Width="8" Height="8" Fill="#64748B" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                            <TextBlock Name="TxtTrayStatus" Text="Tray Companion" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
+                            <TextBlock Name="TxtTrayStatus" Text="Tray Companion: OFF" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
                     <!-- Auto-Watcher Pill (Clickable) -->
@@ -1360,9 +1391,11 @@ $txtGpuBadge               = $window.FindName("TxtGpuBadge")
 $txtCpuBadge               = $window.FindName("TxtCpuBadge")
 $dotTray                   = $window.FindName("DotTray")
 $txtTrayStatus             = $window.FindName("TxtTrayStatus")
+$pillTrayStatus            = $window.FindName("PillTrayStatus")
 $dotWatcher                = $window.FindName("DotWatcher")
 $txtWatcherStatus          = $window.FindName("TxtWatcherStatus")
 $pillWatcherStatus         = $window.FindName("PillWatcherStatus")
+$mainTabs                  = $window.FindName("MainTabs")
 $btnToggleWatcher          = $window.FindName("BtnToggleWatcher")
 $btnRefreshAll             = $window.FindName("BtnRefreshAll")
 $btnInstantPurge           = $window.FindName("BtnInstantPurge")
@@ -1485,14 +1518,12 @@ $script:WhitelistList  = [System.Collections.ObjectModel.ObservableCollection[PS
 $script:RestoreList    = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
 $script:CrashList      = [System.Collections.ObjectModel.ObservableCollection[PSCustomObject]]::new()
 $script:SessionWhitelist = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
-$script:CriticalOsProcesses = [System.Collections.Generic.HashSet[string]]::new(
-    @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
-      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
-      "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
-      "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
-      "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr"),
-    [System.StringComparer]::OrdinalIgnoreCase
-)
+$script:CriticalOsProcesses = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+@("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
+  "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+  "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
+  "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
+  "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr") | ForEach-Object { [void]$script:CriticalOsProcesses.Add($_) }
 
 $gridProcesses.ItemsSource      = $script:ProcessList
 $gridGameLibrary.ItemsSource    = $script:GameList
@@ -1568,9 +1599,10 @@ function Update-DaemonIndicators {
         $txtTrayStatus.Foreground = [System.Windows.Media.Brushes]::LightGray
     }
 
-    # Check Watcher
+    # Check Watcher (either standalone GameWatcher.ps1 OR running via TrayBooster.ps1)
     $watcherProc = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%GameWatcher.ps1%'" -ErrorAction SilentlyContinue
-    if ($watcherProc) {
+    $isWatcherActive = ($watcherProc -or $trayProc)
+    if ($isWatcherActive) {
         $dotWatcher.Fill = [System.Windows.Media.Brushes]::LimeGreen
         $txtWatcherStatus.Text = "Auto-Watcher: ACTIVE"
         $txtWatcherStatus.Foreground = [System.Windows.Media.Brushes]::LightGreen
@@ -1649,6 +1681,31 @@ function Toggle-GameWatcherDaemon {
     }
 }
 
+function Toggle-TrayCompanionDaemon {
+    $trayProc = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%TrayBooster.ps1%'" -ErrorAction SilentlyContinue
+    if ($trayProc) {
+        foreach ($p in $trayProc) {
+            try { Stop-Process -Id $p.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        }
+        $pidFile1 = Join-Path $RootDir "tray.pid"
+        $pidFile2 = Join-Path $ScriptDir "tray.pid"
+        Remove-Item -Path $pidFile1, $pidFile2 -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Milliseconds 200
+        Update-DaemonIndicators
+        $txtStatusBar.Text = "Tray Companion daemon stopped."
+        [System.Windows.MessageBox]::Show("Tray Companion daemon has been stopped.", "Tray Companion", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    } else {
+        $trayPs = Join-Path $ScriptDir "TrayBooster.ps1"
+        if (Test-Path $trayPs) {
+            Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$trayPs`""
+            Start-Sleep -Milliseconds 400
+            Update-DaemonIndicators
+            $txtStatusBar.Text = "Tray Companion daemon active in system tray."
+            [System.Windows.MessageBox]::Show("Tray Companion is now running in the Windows System Tray!`n`nPress Ctrl+F11 anytime for Hardware HUD, or right-click the tray icon for quick actions.", "Tray Companion Active", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        }
+    }
+}
+
 # ---------------------------------------------------------------------------
 # Process Scanning (Game Mode Tab)
 # ---------------------------------------------------------------------------
@@ -1661,7 +1718,8 @@ function Reload-ProcessGrid {
       "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
       "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
       "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
-      "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr")
+      "conhost", "cmd", "pwsh", "powershell", "wt", "WindowsTerminal", "GameBooster", "taskmgr",
+      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git")
     foreach ($cp in $criticalOs) { $wl.Add($cp) | Out-Null }
 
     # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons, Windows Subsystems)
@@ -1683,6 +1741,19 @@ function Reload-ProcessGrid {
     if ($script:SessionWhitelist) {
         foreach ($sw in $script:SessionWhitelist) { $wl.Add($sw) | Out-Null }
     }
+
+    # 4. Monitored games & common gaming binaries (Never show games in the kill grid)
+    if ($cfg.watcherSettings -and $cfg.watcherSettings.monitoredGames) {
+        foreach ($mg in $cfg.watcherSettings.monitoredGames) { [void]$wl.Add($mg) }
+    }
+    if ($cfg.autoStartWith -and $cfg.autoStartWith.triggerProcesses) {
+        foreach ($tp in $cfg.autoStartWith.triggerProcesses) { [void]$wl.Add($tp) }
+    }
+    if ($cfg.gameProfiles) {
+        foreach ($prop in $cfg.gameProfiles.PSObject.Properties) { [void]$wl.Add($prop.Name) }
+    }
+    $gameBinaries = @("cod", "bootstrapper", "cod24", "sp24", "BlackOps6", "Wow", "WowClassic", "Wow-64", "cs2", "csgo", "dota2", "Valorant", "RiotClientServices", "Overwatch", "FortniteClient-Win64-Shipping", "r5apex")
+    foreach ($gb in $gameBinaries) { [void]$wl.Add($gb) }
 
     $script:ProcessList.Clear()
     $rawProcs = Get-Process -ErrorAction SilentlyContinue | Where-Object { 
@@ -1729,7 +1800,7 @@ function Reload-ProcessGrid {
         $displayName = if ($procCount -gt 1) { "$pName ($procCount procs)" } else { $pName }
 
         # Default selected for launchers, browsers, and background tools (Never select anti-cheats, sound drivers, or overlays)
-        $isProtected = $wl.Contains($pName) -or ($pName -match "RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud")
+        $isProtected = $wl.Contains($pName) -or ($pName -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative")
         $isSel = (-not $isProtected -and ($cat -in @("Launcher / Social", "Web Browser") -or $cat -eq "Interactive App"))
 
         $script:ProcessList.Add([PSCustomObject]@{
@@ -1764,9 +1835,24 @@ $gridProcesses.add_CurrentCellChanged({
 # Preset selection buttons
 $btnSelectNonEssential.Add_Click({
     $essentialServices = Get-EssentialGamingServicesWhitelist
-    $esSet = [System.Collections.Generic.HashSet[string]]::new($essentialServices, [System.StringComparer]::OrdinalIgnoreCase)
+    $esSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($es in $essentialServices) { [void]$esSet.Add($es) }
+
+    $cfg = Get-AppConfig
+    if ($cfg.whitelist) { foreach ($w in $cfg.whitelist) { [void]$esSet.Add($w) } }
+    if ($cfg.systemProtected) { foreach ($sp in $cfg.systemProtected) { [void]$esSet.Add($sp) } }
+    if ($cfg.hardwareKeep) { foreach ($hk in $cfg.hardwareKeep) { [void]$esSet.Add($hk) } }
+    if ($cfg.watcherSettings -and $cfg.watcherSettings.monitoredGames) {
+        foreach ($mg in $cfg.watcherSettings.monitoredGames) { [void]$esSet.Add($mg) }
+    }
+    if ($script:SessionWhitelist) { foreach ($sw in $script:SessionWhitelist) { [void]$esSet.Add($sw) } }
+
+    $gameBinaries = @("cod", "bootstrapper", "cod24", "sp24", "BlackOps6", "Wow", "WowClassic", "Wow-64", "cs2", "csgo", "dota2", "Valorant", "RiotClientServices", "Overwatch", "FortniteClient-Win64-Shipping", "r5apex")
+    foreach ($gb in $gameBinaries) { [void]$esSet.Add($gb) }
+
     foreach ($item in $script:ProcessList) {
-        $item.IsSelected = (-not $esSet.Contains($item.Name) -and $item.Name -notmatch "RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud")
+        $isProtected = $esSet.Contains($item.Name) -or ($item.Name -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative")
+        $item.IsSelected = (-not $isProtected)
     }
     $gridProcesses.Items.Refresh()
     Update-SelectedMetrics
@@ -1869,8 +1955,15 @@ $menuCtxCloseNow.Add_Click({
 
     $pidsToKill = if ($sel.Pids) { @($sel.Pids) } else { @($sel.Id) }
     $appFreedRAM = 0
+    $svcName = $null
     foreach ($pidVal in $pidsToKill) {
         try {
+            # Check if this PID is managed by a Windows Service
+            $svc = Get-CimInstance Win32_Service -Filter "ProcessId = $pidVal" -ErrorAction SilentlyContinue
+            if ($svc) {
+                $svcName = $svc.Name
+                & sc.exe stop $svcName | Out-Null
+            }
             $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
             if ($p) {
                 $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
@@ -1881,11 +1974,12 @@ $menuCtxCloseNow.Add_Click({
     }
 
     $closedItem = [PSCustomObject]@{
-        Name   = $sel.Name
-        Id     = $sel.Id
-        RAM_MB = if ($appFreedRAM -gt 0) { $appFreedRAM } else { $sel.RAM_MB }
-        Path   = $sel.Path
-        Time   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        Name        = $sel.Name
+        ServiceName = $svcName
+        Id          = $sel.Id
+        RAM_MB      = if ($appFreedRAM -gt 0) { $appFreedRAM } else { $sel.RAM_MB }
+        Path        = $sel.Path
+        Time        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
     }
 
     $script:RestoreList.Insert(0, $closedItem)
@@ -1946,21 +2040,34 @@ $btnActivateGameMode.Add_Click({
     $closedItems = @()
     $freedRAM = 0
 
-    $criticalOsSet = [System.Collections.Generic.HashSet[string]]::new(@(
-        "Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
-        "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
-        "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
-        "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
-        "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr"
-    ), [System.StringComparer]::OrdinalIgnoreCase)
+    $criticalOsSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
+      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
+      "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
+      "conhost", "cmd", "pwsh", "powershell", "wt", "WindowsTerminal", "GameBooster", "taskmgr",
+      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git") | ForEach-Object { [void]$criticalOsSet.Add($_) }
+
+    # Map running Windows services so background services (like Fing.Agent) are properly stopped and restorable
+    $serviceMap = @{}
+    try {
+        Get-CimInstance Win32_Service -Filter "State = 'Running'" -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.ProcessId) { $serviceMap[[int]$_.ProcessId] = $_.Name }
+        }
+    } catch {}
 
     foreach ($item in $targets) {
         if ($criticalOsSet.Contains($item.Name)) { continue }
 
         $pidsToKill = if ($item.Pids) { @($item.Pids) } else { @($item.Id) }
         $appFreedRAM = 0
+        $svcName = $null
         foreach ($pidVal in $pidsToKill) {
             try {
+                if ($serviceMap.ContainsKey([int]$pidVal)) {
+                    $svcName = $serviceMap[[int]$pidVal]
+                    & sc.exe stop $svcName | Out-Null
+                }
                 $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
                 if ($p -and -not $criticalOsSet.Contains($p.ProcessName)) {
                     $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
@@ -1970,11 +2077,12 @@ $btnActivateGameMode.Add_Click({
             } catch {}
         }
         $closedItems += [PSCustomObject]@{
-            Name   = $item.Name
-            Id     = $item.Id
-            RAM_MB = if ($appFreedRAM -gt 0) { $appFreedRAM } else { $item.RAM_MB }
-            Path   = $item.Path
-            Time   = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            Name        = $item.Name
+            ServiceName = $svcName
+            Id          = $item.Id
+            RAM_MB      = if ($appFreedRAM -gt 0) { $appFreedRAM } else { $item.RAM_MB }
+            Path        = $item.Path
+            Time        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         }
         $freedRAM += if ($appFreedRAM -gt 0) { $appFreedRAM } else { $item.RAM_MB }
     }
@@ -2046,6 +2154,9 @@ if ($btnTab2ToggleWatcher) {
 }
 if ($pillWatcherStatus) {
     $pillWatcherStatus.Add_MouseLeftButtonDown({ Toggle-GameWatcherDaemon })
+}
+if ($pillTrayStatus) {
+    $pillTrayStatus.Add_MouseLeftButtonDown({ Toggle-TrayCompanionDaemon })
 }
 
 $btnScanLibraries.Add_Click({
@@ -2814,13 +2925,14 @@ function Reload-RestoreGrid {
             $sess = Get-Content -Raw -Path $SessionFile | ConvertFrom-Json
             if ($sess.ClosedApps) {
                 foreach ($app in $sess.ClosedApps) {
-                    # Filter out non-existent paths if needed
-                    if (-not $app.Path -or (Test-Path $app.Path)) {
+                    # Filter out non-existent paths if needed (allow services through)
+                    if ($app.ServiceName -or -not $app.Path -or (Test-Path $app.Path)) {
                         $script:RestoreList.Add([PSCustomObject]@{
-                            Name   = $app.Name
-                            Id     = $app.Id
-                            RAM_MB = $app.RAM_MB
-                            Path   = $app.Path
+                            Name        = $app.Name
+                            ServiceName = $app.ServiceName
+                            Id          = $app.Id
+                            RAM_MB      = $app.RAM_MB
+                            Path        = $app.Path
                         })
                     }
                 }
@@ -2830,16 +2942,30 @@ function Reload-RestoreGrid {
 }
 
 function Restore-ApplicationItem($item) {
+    $skipRestore = @("node", "python", "cmd", "powershell", "pwsh", "bash", "wsl", "dashost", "midisrv", "conhost", "wt", "WindowsTerminal")
+    if ($skipRestore -contains $item.Name) {
+        $script:RestoreList.Remove($item)
+        return
+    }
+
+    if ($item.ServiceName) {
+        try {
+            & sc.exe start $item.ServiceName | Out-Null
+            $script:RestoreList.Remove($item)
+            $txtStatusBar.Text = "Restored Windows service $($item.ServiceName)."
+            return
+        } catch {}
+    }
     if (-not $item.Path -or -not (Test-Path $item.Path)) {
         # Try to launch by name
         try {
-            Start-Process $item.Name -ErrorAction SilentlyContinue
+            Start-Process -FilePath $item.Name -ErrorAction SilentlyContinue
             $script:RestoreList.Remove($item)
             $txtStatusBar.Text = "Restored $($item.Name)."
             return
         } catch {}
     } else {
-        Start-Process $item.Path -ErrorAction SilentlyContinue
+        Start-Process -FilePath $item.Path -ErrorAction SilentlyContinue
         $script:RestoreList.Remove($item)
         $txtStatusBar.Text = "Restored $($item.Name)."
     }
@@ -3043,7 +3169,30 @@ Reload-CrashGrid
 Update-DaemonIndicators
 Update-HudCoordinateFields
 Update-OsdSettingsFields
-Run-RadarPing
+# Auto-refresh when tabs change
+if ($mainTabs) {
+    $mainTabs.Add_SelectionChanged({
+        param($sender, $e)
+        if ($e.Source -eq $mainTabs) {
+            switch ($mainTabs.SelectedIndex) {
+                0 { Reload-ProcessGrid; Update-StandbyDisplay }
+                1 { Reload-GameLibraryGrid }
+                2 { Update-TweaksDisplay }
+                5 { Reload-WhitelistGrid }
+                6 { Reload-RestoreGrid }
+            }
+        }
+    })
+}
+
+# Periodic Daemon & Memory Status Check (every 4 seconds)
+$script:daemonTimer = New-Object System.Windows.Threading.DispatcherTimer
+$script:daemonTimer.Interval = [TimeSpan]::FromSeconds(4)
+$script:daemonTimer.Add_Tick({
+    Update-DaemonIndicators
+    Update-StandbyDisplay
+})
+$script:daemonTimer.Start()
 
 # Show Window
 $window.ShowDialog() | Out-Null

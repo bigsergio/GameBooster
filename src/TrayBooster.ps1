@@ -187,13 +187,13 @@ $contextMenu.Items.Add("-") | Out-Null
 
 $itemBoost = $contextMenu.Items.Add("Activate Game Mode Now (Close Bloat)")
 $itemBoost.add_Click({
-    Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent"
+    Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent" -Wait
     $notifyIcon.ShowBalloonTip(3000, "Game Mode Activated", "Background bloat closed, RAM purged, Ultimate Power Plan set.", [System.Windows.Forms.ToolTipIcon]::Info)
 })
 
 $itemRestore = $contextMenu.Items.Add("Restore Closed Apps Now")
 $itemRestore.add_Click({
-    Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent"
+    Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
     $notifyIcon.ShowBalloonTip(3000, "Apps Restored", "All previously closed apps have been relaunched.", [System.Windows.Forms.ToolTipIcon]::Info)
 })
 
@@ -273,7 +273,7 @@ $watcherTimer.Add_Tick({
         $notifyIcon.ShowBalloonTip(3000, "Game Detected ($($gameProc.ProcessName))", "Optimizing PC for gaming and docking Telemetry HUD...", [System.Windows.Forms.ToolTipIcon]::Info)
 
         # 1. Boost System
-        Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent"
+        Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Boost", "-Silent" -Wait
 
         # 2. Auto-Launch Companion Apps
         # 2a. Global Companion Apps (from Tab 5)
@@ -347,7 +347,7 @@ $watcherTimer.Add_Tick({
         $notifyIcon.ShowBalloonTip(3000, "Game Session Ended", "Restoring previous session applications...", [System.Windows.Forms.ToolTipIcon]::Info)
 
         # Restore closed applications
-        Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Wait", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent"
+        Start-Process -FilePath $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$ScriptDir\GameBooster.ps1`"", "-Restore", "-Silent" -Wait
     }
 })
 

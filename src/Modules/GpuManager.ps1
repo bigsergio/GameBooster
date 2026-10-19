@@ -144,7 +144,17 @@ function Get-ProtectedGamingServicesDetails {
         @{ Name = "obs64"; Reason = "OBS Studio streaming and game recording engine" },
         @{ Name = "FanControl"; Reason = "Custom GPU/CPU fan curve management utility" },
         @{ Name = "StreamDeck"; Reason = "Elgato Stream Deck hotkey controller" },
-        @{ Name = "WaveLink"; Reason = "Elgato Wave Link digital audio mixer" }
+        @{ Name = "WaveLink"; Reason = "Elgato Wave Link digital audio mixer" },
+        @{ Name = "RzKLService"; Reason = "Razer Chroma Keyboard Lighting daemon" },
+        @{ Name = "RzSDKService"; Reason = "Razer Chroma SDK service" },
+        @{ Name = "RazerSynapseService"; Reason = "Razer Synapse peripheral configuration daemon" },
+        @{ Name = "RazerAppEngine"; Reason = "Razer Synapse central control interface" },
+        @{ Name = "RzActionSvc"; Reason = "Razer peripheral keybind & macro manager" },
+        @{ Name = "Creative.App"; Reason = "Creative Sound Blaster suite" },
+        @{ Name = "Creative.VADMonitorService"; Reason = "Creative virtual audio device monitor" },
+        @{ Name = "lghub"; Reason = "Logitech G HUB peripheral suite" },
+        @{ Name = "lghub_updater"; Reason = "Logitech G HUB updater" },
+        @{ Name = "logi_lamparray_service"; Reason = "Logitech Dynamic Lighting driver" }
     )
     foreach ($hm in $hardwareMonitors) {
         $services.Add([PSCustomObject]@{
