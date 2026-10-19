@@ -151,31 +151,11 @@ namespace GameBoosterLauncher
                     FileName = psHost,
                     Arguments = sbArgs.ToString(),
                     WorkingDirectory = baseDir,
-                    CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden,
-                    UseShellExecute = false,
-                    RedirectStandardError = true
+                    UseShellExecute = true
                 };
 
-                Process proc = Process.Start(psi);
-                if (proc != null)
-                {
-                    // Check if process crashed immediately on startup
-                    if (proc.WaitForExit(1500) && proc.ExitCode != 0)
-                    {
-                        string err = proc.StandardError.ReadToEnd();
-                        if (string.IsNullOrWhiteSpace(err))
-                        {
-                            err = "Process exited with code " + proc.ExitCode;
-                        }
-                        MessageBox.Show(
-                            "Game Booster encountered an issue during startup:\n\n" + err,
-                            "Game Booster - Startup Error",
-                            MessageBoxButtons.OK,
-                            MessageBoxIcon.Error
-                        );
-                    }
-                }
+                Process.Start(psi);
             }
             catch (Exception ex)
             {
