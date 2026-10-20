@@ -7,9 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [1.2.1] - 2026-10-19
+## [1.2.1] - 2026-10-20
 
-### 🚀 In-App GitHub Update Checker
+### 🚀 1-Click In-App Auto Update
+- **Zero-Friction In-App Upgrades:** When an update is detected, clicking the blue header notification pill (`🚀 Update: v...`) or checking updates in Diagnostics prompts the user for 1-Click Auto Update. Game Booster automatically downloads the latest GitHub release zip into `%TEMP%`, runs a background updater script, extracts the updated files over the application directory, and seamlessly relaunches `GameBooster.exe` without requiring manual unzipping.
+
+### 🖥️ Hardware HUD Reliability, Geometry & btop4win Fixes
+- **Robust btop4win Direct Setup:** Replaced fragile winget btop installs with direct GitHub release extraction of `btop4win-x64.zip` into `%LOCALAPPDATA%\btop4win`, establishing both `btop4win.exe` and `btop.exe` aliases. Resolves the Windows Terminal `0x80070002` ("file not found") error permanently.
+- **Eliminated Dependency Installer Popup Spam:** Added re-entrancy protection and explicit timer termination (`$sender.Stop()`, `$sender.IsEnabled = $false`) to `$btnInstallHudDeps.Add_Tick`, permanently preventing repetitive "Installation Complete" popups.
+- **Pixel-Accurate Multi-Monitor Snapping:** Resolved a PowerShell scope issue in `Get-VisibleWindowHwnd` by implementing native Win32 window discovery (`[WindowSnapper]::FindWindowForPid`) in C#. Windows Terminal now snaps precisely to saved multi-monitor pixel coordinates (`hudX`, `hudY`, `hudWidth`, `hudHeight`) on launch.
+- **Automatic HUD Termination on Exit:** Added `$window.Add_Closing` handler to call `Close-HardwareHudAction`, automatically terminating active Windows Terminal HUD windows, `btop4win`, `btm`, and `PingMonitor` child processes whenever Game Booster is closed.
+
+### 🎛️ Navigation & UI Layout Modernization
+- **Prominent Single-Row Tab Strip:** Streamlined tab headers to compact titles with optimized padding, eliminating WPF multi-row tab header wrapping and vertical jumping. `🚀 Game Mode (Close Apps)` is prominently anchored as the primary view.
+- **Context-Sensitive Process Refresh:** Moved `BtnRefreshAll` ("🔄 Refresh Running Apps") from the global toolbar directly into Tab 1 right next to process selection filters and search, reserving the top Quick Action Bar for universal actions (Standby Purge, HUD toggle, OSD toggle, Minimize to Tray).
+- **Tab 3 Datacenter Radar Pre-Population:** Added `Initialize-ServerRadarGrid` on startup and tab load, displaying all 10 datacenter targets (Valve Frankfurt/London, Blizzard, Riot, AWS, DNS) with host IPs and pending statuses immediately before scanning.
+- **Odd Scrollbar Removal in Tab 3:** Tightened card padding, margins, and descriptions so the left column subsystems, standby cache, and shader cleaner cards fit cleanly at standard resolutions without an awkward vertical scrollbar.
 - **Asynchronous Release Notification:** Added background GitHub Releases API check (`https://api.github.com/repos/bigsergio/GameBooster/releases/latest`) on startup and via manual button. Queries asynchronously via `ThreadPool` without impacting UI responsiveness or gaming framerates.
 - **Interactive Header Notification Pill:** When a new release is published on GitHub, a prominent blue pill (`🚀 Update: v...`) illuminates in the dashboard header. Clicking it opens the GitHub release page directly in the default web browser.
 - **Manual "Check Updates" Button:** Added a dedicated `🔄 Check Updates` button in the bottom status bar with informative feedback dialogues and error isolation for offline use.

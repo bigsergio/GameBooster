@@ -44,12 +44,12 @@ if (Test-Path $ConfigFile) {
     try {
         $cfg = Get-Content -Raw -Path $ConfigFile | ConvertFrom-Json
         if ($cfg.hudSettings) {
-            if ($cfg.hudSettings.hudX) { $hudX = [int]$cfg.hudSettings.hudX }
-            if ($cfg.hudSettings.hudY) { $hudY = [int]$cfg.hudSettings.hudY }
-            if ($cfg.hudSettings.hudWidth) { $hudWidth = [int]$cfg.hudSettings.hudWidth }
-            if ($cfg.hudSettings.hudHeight) { $hudHeight = [int]$cfg.hudSettings.hudHeight }
-            if ($cfg.hudSettings.hudCols) { $hudCols = [int]$cfg.hudSettings.hudCols }
-            if ($cfg.hudSettings.hudRows) { $hudRows = [int]$cfg.hudSettings.hudRows }
+            if ($null -ne $cfg.hudSettings.hudX) { $hudX = [int]$cfg.hudSettings.hudX }
+            if ($null -ne $cfg.hudSettings.hudY) { $hudY = [int]$cfg.hudSettings.hudY }
+            if ($null -ne $cfg.hudSettings.hudWidth) { $hudWidth = [int]$cfg.hudSettings.hudWidth }
+            if ($null -ne $cfg.hudSettings.hudHeight) { $hudHeight = [int]$cfg.hudSettings.hudHeight }
+            if ($null -ne $cfg.hudSettings.hudCols) { $hudCols = [int]$cfg.hudSettings.hudCols }
+            if ($null -ne $cfg.hudSettings.hudRows) { $hudRows = [int]$cfg.hudSettings.hudRows }
             if ($cfg.hudSettings.layoutPreset) { $activePreset = $cfg.hudSettings.layoutPreset }
         }
     } catch {
@@ -78,48 +78,49 @@ public class WindowSnapper {
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    public static IntPtr FindWindowForPid(uint targetPid) {
+        IntPtr found = IntPtr.Zero;
+        IntPtr hDesk = OpenDesktop("Default", 0, false, 0x01FF);
+        if (hDesk != IntPtr.Zero) {
+            EnumDesktopWindows(hDesk, delegate(IntPtr hWnd, IntPtr lParam) {
+                uint pid = 0;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (pid == targetPid && IsWindowVisible(hWnd)) {
+                    RECT r;
+                    GetWindowRect(hWnd, out r);
+                    if ((r.Right - r.Left) > 200 && (r.Bottom - r.Top) > 200) {
+                        found = hWnd;
+                        return false;
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+            CloseDesktop(hDesk);
+        }
+        if (found == IntPtr.Zero) {
+            EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+                uint pid = 0;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (pid == targetPid && IsWindowVisible(hWnd)) {
+                    RECT r;
+                    GetWindowRect(hWnd, out r);
+                    if ((r.Right - r.Left) > 200 && (r.Bottom - r.Top) > 200) {
+                        found = hWnd;
+                        return false;
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+        }
+        return found;
+    }
 }
 "@ -ErrorAction SilentlyContinue
 
 # Helper to find visible HWND of a process
 function Get-VisibleWindowHwnd([int]$pidTarget) {
-    $foundHwnd = [IntPtr]::Zero
-    $hDesk = [WindowSnapper]::OpenDesktop("Default", 0, $false, 0x01FF)
-    if ($hDesk -ne [IntPtr]::Zero) {
-        [WindowSnapper]::EnumDesktopWindows($hDesk, {
-            param($hWnd, $lParam)
-            $pOut = 0
-            [WindowSnapper]::GetWindowThreadProcessId($hWnd, [ref]$pOut) | Out-Null
-            if ($pOut -eq $pidTarget -and [WindowSnapper]::IsWindowVisible($hWnd)) {
-                $r = New-Object WindowSnapper+RECT
-                [WindowSnapper]::GetWindowRect($hWnd, [ref]$r) | Out-Null
-                if (($r.Right - $r.Left) -gt 250 -and ($r.Bottom - $r.Top) -gt 250) {
-                    $script:foundHwnd = $hWnd
-                    return $false
-                }
-            }
-            return $true
-        }, [IntPtr]::Zero) | Out-Null
-        [WindowSnapper]::CloseDesktop($hDesk) | Out-Null
-    }
-
-    if ($foundHwnd -eq [IntPtr]::Zero) {
-        [WindowSnapper]::EnumWindows({
-            param($hWnd, $lParam)
-            $pOut = 0
-            [WindowSnapper]::GetWindowThreadProcessId($hWnd, [ref]$pOut) | Out-Null
-            if ($pOut -eq $pidTarget -and [WindowSnapper]::IsWindowVisible($hWnd)) {
-                $r = New-Object WindowSnapper+RECT
-                [WindowSnapper]::GetWindowRect($hWnd, [ref]$r) | Out-Null
-                if (($r.Right - $r.Left) -gt 250 -and ($r.Bottom - $r.Top) -gt 250) {
-                    $script:foundHwnd = $hWnd
-                    return $false
-                }
-            }
-            return $true
-        }, [IntPtr]::Zero) | Out-Null
-    }
-    return $foundHwnd
+    return [WindowSnapper]::FindWindowForPid([uint32]$pidTarget)
 }
 
 # ============================================================================
@@ -175,17 +176,27 @@ $wtPath = (Get-Command wt.exe -ErrorAction SilentlyContinue).Source
 if (-not $wtPath) { $wtPath = "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe" }
 Write-HUDLog "Using Windows Terminal: $wtPath"
 
-$btopCmd = (Get-Command btop.exe -ErrorAction SilentlyContinue).Source
+$btopCmd = (Get-Command btop4win.exe -ErrorAction SilentlyContinue).Source
+if (-not $btopCmd) { $btopCmd = (Get-Command btop.exe -ErrorAction SilentlyContinue).Source }
 if (-not $btopCmd) {
     $cands = @(
+        "$env:LOCALAPPDATA\btop4win\btop4win.exe",
+        "$env:LOCALAPPDATA\btop4win\btop.exe",
+        "$env:LOCALAPPDATA\btop4win\btop4win\btop4win.exe",
         "$env:LOCALAPPDATA\Microsoft\WinGet\Links\btop.exe",
         "$env:LOCALAPPDATA\Microsoft\WinGet\Packages\aristocratos.btop4win_Microsoft.Winget.Source_8wekyb3d8bbwe\btop4win\btop4win.exe",
-        "$env:LOCALAPPDATA\btop4win\btop.exe",
+        "$env:ProgramFiles\btop4win\btop4win.exe",
         "$env:ProgramFiles\btop4win\btop.exe"
     )
     foreach ($c in $cands) { if (Test-Path $c) { $btopCmd = $c; break } }
 }
-if (-not $btopCmd) { $btopCmd = "btop" }
+
+if (-not $btopCmd -or -not (Test-Path $btopCmd)) {
+    Write-HUDLog "btop4win telemetry executable not found in any candidate path." "ERROR"
+    Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue
+    [System.Windows.MessageBox]::Show("btop4win executable was not found!`n`nPlease open Game Booster and click 'Install Dependencies' in the Hardware HUD tab to install it automatically.", "Missing Dependency", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+    exit 1
+}
 
 $btopDir = $ScriptDir
 if (Test-Path $btopCmd) {
@@ -273,17 +284,18 @@ try {
 # Snap window to exact coordinates
 $attempts = 0
 $snapped = $false
-while ($attempts -lt 16 -and -not $snapped) {
+while ($attempts -lt 20 -and -not $snapped) {
     Start-Sleep -Milliseconds 250
-    $termProc = Get-Process -Name "WindowsTerminal" -ErrorAction SilentlyContinue | Sort-Object StartTime -Descending | Select-Object -First 1
-    if ($termProc) {
+    $termProcs = Get-Process -Name "WindowsTerminal" -ErrorAction SilentlyContinue | Sort-Object StartTime -Descending
+    foreach ($termProc in $termProcs) {
         $targetHwnd = Get-VisibleWindowHwnd $termProc.Id
-        if ($targetHwnd -ne [IntPtr]::Zero) {
+        if ($targetHwnd -and $targetHwnd -ne [IntPtr]::Zero) {
             Write-HUDLog "Found terminal window HWND: $targetHwnd. Applying SetWindowPos($hudX, $hudY, $hudWidth, $hudHeight)..."
             [WindowSnapper]::ShowWindow($targetHwnd, 9) | Out-Null
-            [WindowSnapper]::SetWindowPos($targetHwnd, [IntPtr]::Zero, $hudX, $hudY, $hudWidth, $hudHeight, 0x0044) | Out-Null
+            [WindowSnapper]::SetWindowPos($targetHwnd, [IntPtr]::Zero, $hudX, $hudY, $hudWidth, $hudHeight, 0x0040) | Out-Null
             $snapped = $true
             Write-HUDLog "Window position successfully snapped."
+            break
         }
     }
     $attempts++

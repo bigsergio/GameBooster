@@ -342,7 +342,7 @@ Write-AppLog "Building Modern WPF Interface..."
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Game Mode Booster v1.2.1 PRO"
-        Height="840" Width="1280" MinWidth="1080" MinHeight="700"
+        Height="850" Width="1280" MinWidth="1100" MinHeight="720"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
         FontFamily="Segoe UI, Inter, Arial">
@@ -358,7 +358,7 @@ Write-AppLog "Building Modern WPF Interface..."
         <Style TargetType="TabItem">
             <Setter Property="FontSize" Value="12"/>
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Padding" Value="10,7"/>
             <Setter Property="Foreground" Value="#94A3B8"/>
             <Setter Property="Background" Value="#111827"/>
             <Setter Property="BorderThickness" Value="0,0,0,2"/>
@@ -688,14 +688,13 @@ Write-AppLog "Building Modern WPF Interface..."
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <Button Name="BtnRefreshAll" Content="🔄 Refresh Scan" Background="#1E293B" Foreground="#E2E8F0" Height="32" Padding="12,0" Margin="0,0,6,0" FontWeight="SemiBold"/>
-                    <Button Name="BtnInstantPurge" Content="🧹 Purge Standby RAM" Background="#065F46" Foreground="#34D399" Height="32" Padding="14,0" Margin="0,0,6,0" FontWeight="Bold" ToolTip="Instantly flushes Windows standby list without external RAMMap"/>
-                    <Button Name="BtnLaunchHudTop" Content="🖥️ Hardware HUD (Ctrl+F11)" Background="#1E293B" Foreground="#38BDF8" Height="32" Padding="12,0" Margin="0,0,6,0" FontWeight="SemiBold"/>
-                    <Button Name="BtnToggleOsdTop" Content="🎯 In-Game OSD (F10)" Background="#1E293B" Foreground="#F43F5E" Height="32" Padding="12,0" Margin="0,0,6,0" FontWeight="Bold" ToolTip="Toggle transparent click-through in-game HUD overlay"/>
+                    <Button Name="BtnInstantPurge" Content="🧹 Purge Standby RAM" Background="#065F46" Foreground="#34D399" Height="32" Padding="14,0" Margin="0,0,8,0" FontWeight="Bold" ToolTip="Instantly flushes Windows standby list without external RAMMap"/>
+                    <Button Name="BtnLaunchHudTop" Content="🖥️ Hardware HUD (Ctrl+F11)" Background="#1E293B" Foreground="#38BDF8" Height="32" Padding="12,0" Margin="0,0,8,0" FontWeight="SemiBold"/>
+                    <Button Name="BtnToggleOsdTop" Content="🎯 In-Game OSD (F10)" Background="#1E293B" Foreground="#F43F5E" Height="32" Padding="12,0" Margin="0,0,8,0" FontWeight="Bold" ToolTip="Toggle transparent click-through in-game HUD overlay"/>
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <Button Name="BtnLaunchTrayCompanion" Content="📥 Minimize to Tray" Background="#1E293B" Foreground="#CBD5E1" Height="32" Padding="12,0" Margin="0,0,6,0"/>
+                    <Button Name="BtnLaunchTrayCompanion" Content="📥 Minimize to Tray" Background="#1E293B" Foreground="#CBD5E1" Height="32" Padding="12,0" Margin="0,0,8,0"/>
                     <Button Name="BtnSaveAllConfig" Content="💾 Save Defaults" Background="#1E293B" Foreground="#10B981" Height="32" Padding="12,0" FontWeight="Bold"/>
                 </StackPanel>
             </Grid>
@@ -705,7 +704,7 @@ Write-AppLog "Building Modern WPF Interface..."
         <TabControl Name="MainTabs" Grid.Row="2" Background="#0F172A" BorderBrush="#1F2937" BorderThickness="1">
             
             <!-- TAB 1: GAME MODE (CLOSE APPS) -->
-            <TabItem Header="🚀 Game Mode (Close Apps)">
+            <TabItem Name="TabGameMode" Header="🚀 Game Mode (Close Apps)">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -721,6 +720,8 @@ Write-AppLog "Building Modern WPF Interface..."
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
+                            <Button Name="BtnRefreshAll" Content="🔄 Refresh Running Apps" Background="#1E293B" Foreground="#38BDF8" Height="30" Padding="12,0" Margin="0,0,10,0" FontWeight="Bold" ToolTip="Scan and refresh active running processes"/>
+                            <Rectangle Width="1" Fill="#334155" Margin="0,2,10,2"/>
                             <TextBlock Text="Select:" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
                             <Button Name="BtnSelectNonEssential" Content="All Non-Essential" Background="#047857" Foreground="#FFFFFF" Height="30" Padding="12,0" Margin="0,0,6,0" FontWeight="SemiBold"/>
                             <Button Name="BtnSelectBalanced" Content="Keep Monitors (RTSS/HWiNFO)" Background="#334155" Foreground="#F8FAFC" Height="30" Padding="12,0" Margin="0,0,6,0"/>
@@ -778,7 +779,7 @@ Write-AppLog "Building Modern WPF Interface..."
             </TabItem>
 
             <!-- TAB 2: GAME LIBRARY & PROFILES (Features 1 & 5) -->
-            <TabItem Header="🎮 Game Library &amp; Profiles">
+            <TabItem Header="🎮 Library &amp; Profiles">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -905,10 +906,10 @@ Write-AppLog "Building Modern WPF Interface..."
             </TabItem>
 
             <!-- TAB 3: SYSTEM TWEAKS & RADAR (Features 2, 3, 4, 8, 10) -->
-            <TabItem Header="⚡ 1-Click Tweaks &amp; Radar">
+            <TabItem Header="⚡ Tweaks &amp; Radar">
                 <Grid Margin="12">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="420"/>
+                        <ColumnDefinition Width="440"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
@@ -916,11 +917,11 @@ Write-AppLog "Building Modern WPF Interface..."
                     <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
                         <StackPanel>
                             <!-- Card 1: Windows Low-Latency Subsystems -->
-                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
                                 <StackPanel>
-                                    <TextBlock Text="🛡️ WINDOWS LOW-LATENCY SUBSYSTEMS" FontWeight="Bold" Foreground="#38BDF8" FontSize="12" Margin="0,0,0,8"/>
+                                    <TextBlock Text="🛡️ WINDOWS LOW-LATENCY SUBSYSTEMS" FontWeight="Bold" Foreground="#38BDF8" FontSize="12" Margin="0,0,0,6"/>
                                     
-                                    <Grid Margin="0,0,0,6">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -931,7 +932,7 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,6">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -942,7 +943,7 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,6">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -953,7 +954,7 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,10">
+                                    <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -964,16 +965,16 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Button Name="BtnApplyAllTweaks" Content="⚡ 1-Click Apply All Gaming Tweaks" Background="#10B981" Foreground="#022C22" Height="36" FontWeight="ExtraBold"/>
+                                    <Button Name="BtnApplyAllTweaks" Content="⚡ 1-Click Apply All Gaming Tweaks" Background="#10B981" Foreground="#022C22" Height="32" FontWeight="ExtraBold"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- Card 2: Smart Memory Cleaner -->
-                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="12" Margin="0,0,0,10">
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
                                 <StackPanel>
-                                    <TextBlock Text="🧠 SMART STANDBY RAM &amp; WORKING SET" FontWeight="Bold" Foreground="#A78BFA" FontSize="12" Margin="0,0,0,8"/>
-                                    <TextBlock Text="Windows caches closed programs in Standby RAM, causing micro-stutters when games allocate memory. This Native cleaner flushes standby memory instantly." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                    <Grid Margin="0,0,0,10">
+                                    <TextBlock Text="🧠 SMART STANDBY RAM &amp; WORKING SET" FontWeight="Bold" Foreground="#A78BFA" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Flush Windows Standby cache instantly to eliminate frame micro-stutters." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -981,16 +982,16 @@ Write-AppLog "Building Modern WPF Interface..."
                                         <TextBlock Text="Active Standby Cache:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12"/>
                                         <TextBlock Name="TxtStandbySize" Grid.Column="1" Text="Measuring..." FontWeight="ExtraBold" Foreground="#A78BFA" FontSize="13"/>
                                     </Grid>
-                                    <Button Name="BtnPurgeStandbyCard" Content="🧹 Flush Standby List Now" Background="#7C3AED" Foreground="#FFFFFF" Height="34" FontWeight="Bold"/>
+                                    <Button Name="BtnPurgeStandbyCard" Content="🧹 Flush Standby List Now" Background="#7C3AED" Foreground="#FFFFFF" Height="30" FontWeight="Bold"/>
                                 </StackPanel>
                             </Border>
 
                             <!-- Card 3: Shader Cache & Junk Cleaner (Feature 10) -->
-                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="12">
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10">
                                 <StackPanel>
-                                    <TextBlock Text="📦 SHADER CACHE &amp; JUNK CLEANER" FontWeight="Bold" Foreground="#F59E0B" FontSize="12" Margin="0,0,0,8"/>
-                                    <TextBlock Text="Corrupt or bloated DirectX, NVIDIA DXCache/GLCache, and AMD DxcCache cause frame drops. Clean them safely to rebuild fresh pipelines." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                                    <Grid Margin="0,0,0,10">
+                                    <TextBlock Text="📦 SHADER CACHE &amp; JUNK CLEANER" FontWeight="Bold" Foreground="#F59E0B" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Purge bloated DirectX, NVIDIA and AMD pipeline caches to fix stutters." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -998,7 +999,7 @@ Write-AppLog "Building Modern WPF Interface..."
                                         <TextBlock Text="Calculated Cache Size:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12"/>
                                         <TextBlock Name="TxtShaderSize" Grid.Column="1" Text="Calculating..." FontWeight="ExtraBold" Foreground="#F59E0B" FontSize="13"/>
                                     </Grid>
-                                    <Button Name="BtnCleanShaders" Content="🗑️ Clean Shaders (Fix Stutter)" Background="#D97706" Foreground="#FFFFFF" Height="34" FontWeight="Bold"/>
+                                    <Button Name="BtnCleanShaders" Content="🗑️ Clean Shaders (Fix Stutter)" Background="#D97706" Foreground="#FFFFFF" Height="30" FontWeight="Bold"/>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -1045,7 +1046,7 @@ Write-AppLog "Building Modern WPF Interface..."
             </TabItem>
 
             <!-- TAB 4: HARDWARE HUD & IN-GAME OSD (Feature 7) -->
-            <TabItem Header="🖥️ Hardware HUD &amp; In-Game OSD">
+            <TabItem Header="🖥️ HUD &amp; Overlays">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -1208,7 +1209,7 @@ Write-AppLog "Building Modern WPF Interface..."
             </TabItem>
 
             <!-- TAB 5: COMPANIONS & AUTO-START -->
-            <TabItem Header="🚀 Companions &amp; Auto-Start">
+            <TabItem Header="🧩 Auto-Start Apps">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -1243,7 +1244,7 @@ Write-AppLog "Building Modern WPF Interface..."
             </TabItem>
 
             <!-- TAB 6: WHITELIST & GPU PROTECTION (Feature 6) -->
-            <TabItem Header="🛡️ Whitelist &amp; GPU Protection">
+            <TabItem Header="🛡️ Protected Apps">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -1335,7 +1336,7 @@ Write-AppLog "Building Modern WPF Interface..."
             </TabItem>
 
             <!-- TAB 8: DIAGNOSTICS & CRASH HISTORY -->
-            <TabItem Header="🩺 Diagnostics &amp; Crash History">
+            <TabItem Header="📋 Diagnostics">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
@@ -2560,6 +2561,25 @@ $btnCleanShaders.Add_Click({
 })
 
 # Network Latency Radar (Feature 8)
+function Initialize-ServerRadarGrid {
+    try {
+        $script:RadarList.Clear()
+        $endpoints = Get-GamingRadarEndpoints
+        foreach ($ep in $endpoints) {
+            $script:RadarList.Add([PSCustomObject]@{
+                Region   = $ep.Cluster
+                Location = $ep.Region
+                Host     = $ep.Host
+                PingMs   = "--"
+                Latency  = "Ready"
+                Status   = "Pending"
+            })
+        }
+    } catch {
+        Write-AppLog "Radar initialization error: $_" "WARN"
+    }
+}
+
 function Run-RadarPing {
     try {
         if ($btnPingRadarNow) {
@@ -2691,8 +2711,16 @@ $btnApplyManualHudSize.Add_Click({
     try {
         if ($txtHudX.Text) { $cfg.hudSettings.hudX = [int]$txtHudX.Text }
         if ($txtHudY.Text) { $cfg.hudSettings.hudY = [int]$txtHudY.Text }
-        if ($txtHudW.Text) { $cfg.hudSettings.hudWidth = [int]$txtHudW.Text }
-        if ($txtHudH.Text) { $cfg.hudSettings.hudHeight = [int]$txtHudH.Text }
+        if ($txtHudW.Text) {
+            $w = [int]$txtHudW.Text
+            $cfg.hudSettings.hudWidth = $w
+            $cfg.hudSettings.hudCols = [math]::Max(50, [math]::Round($w / 11.0))
+        }
+        if ($txtHudH.Text) {
+            $h = [int]$txtHudH.Text
+            $cfg.hudSettings.hudHeight = $h
+            $cfg.hudSettings.hudRows = [math]::Max(15, [math]::Round($h / 18.5))
+        }
         Save-AppConfig $cfg | Out-Null
         $txtStatusBar.Text = "Saved manual HUD coordinates: X=$($cfg.hudSettings.hudX) Y=$($cfg.hudSettings.hudY) W=$($cfg.hudSettings.hudWidth) H=$($cfg.hudSettings.hudHeight)"
         [System.Windows.MessageBox]::Show("Hardware HUD coordinates saved to config.json!", "Coordinates Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
@@ -2703,34 +2731,69 @@ $btnApplyManualHudSize.Add_Click({
 
 # Install HUD Dependencies (Safe non-blocking execution with single popup)
 $btnInstallHudDeps.Add_Click({
-    $msg = "Install Gaming HUD Dependencies (btop4win + bottom + Windows Terminal)?`n`n" +
-           "This requires an internet connection and will use Windows Package Manager (Winget).`n" +
-           "Installation takes about 1 minute. Game Booster will notify you once complete."
-    $ask = [System.Windows.MessageBox]::Show($msg, "Install Dependencies", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $msg = "Install / Verify Gaming HUD Dependencies (btop4win + bottom + Windows Terminal)?`n`n" +
+           "Game Booster will download btop4win directly and verify required terminal components.`n`n" +
+           "Would you like to proceed?"
+    $ask = [System.Windows.MessageBox]::Show($msg, "Install HUD Dependencies", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ask -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
     $btnInstallHudDeps.IsEnabled = $false
     $btnInstallHudDeps.Content = "Installing Dependencies (Please Wait)..."
-    $txtStatusBar.Text = "Installing HUD packages via winget in background..."
+    $txtStatusBar.Text = "Setting up btop4win and telemetry packages in background..."
+    $script:hudInstallCompleted = $false
 
     $installJob = Start-Job -ScriptBlock {
-        winget install --id aristocratos.btop --accept-source-agreements --accept-package-agreements --silent
-        winget install --id Clement.bottom --accept-source-agreements --accept-package-agreements --silent
+        # 1. Direct btop4win portable setup into $env:LOCALAPPDATA\btop4win
+        try {
+            $destDir = "$env:LOCALAPPDATA\btop4win"
+            if (-not (Test-Path $destDir)) { New-Item -ItemType Directory -Path $destDir -Force | Out-Null }
+            $btopExe = Join-Path $destDir "btop4win.exe"
+            if (-not (Test-Path $btopExe)) {
+                $zipUrl = "https://github.com/aristocratos/btop4win/releases/download/v1.0.5/btop4win-x64.zip"
+                $zipFile = "$env:TEMP\btop4win-x64.zip"
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                Invoke-WebRequest -Uri $zipUrl -OutFile $zipFile -UseBasicParsing -TimeoutSec 40
+                Expand-Archive -Path $zipFile -DestinationPath $destDir -Force
+                Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+                if (Test-Path (Join-Path $destDir "btop4win\btop4win.exe")) {
+                    Copy-Item -Path (Join-Path $destDir "btop4win\*") -Destination $destDir -Recurse -Force
+                }
+            }
+            if ((Test-Path (Join-Path $destDir "btop4win.exe")) -and -not (Test-Path (Join-Path $destDir "btop.exe"))) {
+                Copy-Item (Join-Path $destDir "btop4win.exe") (Join-Path $destDir "btop.exe") -Force
+            }
+        } catch {}
+
+        # 2. Check and install bottom (btm) via winget if missing
+        if (-not (Get-Command btm.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "$env:ProgramFiles\bottom\bin\btm.exe")) {
+            winget install --id Clement.bottom --accept-source-agreements --accept-package-agreements --silent
+        }
+
+        # 3. Check and install Windows Terminal via winget if missing
+        if (-not (Get-Command wt.exe -ErrorAction SilentlyContinue) -and -not (Test-Path "$env:LOCALAPPDATA\Microsoft\WindowsApps\wt.exe")) {
+            winget install --id Microsoft.WindowsTerminal --accept-source-agreements --accept-package-agreements --silent
+        }
     }
 
     $timerJob = New-Object System.Windows.Threading.DispatcherTimer
     $timerJob.Interval = [TimeSpan]::FromSeconds(2)
     $timerJob.Add_Tick({
+        $senderTimer = $args[0]
+        if ($script:hudInstallCompleted) {
+            if ($senderTimer) { $senderTimer.Stop(); $senderTimer.IsEnabled = $false }
+            return
+        }
         if ($installJob.State -eq "Running") { return }
 
-        $timerJob.Stop()
+        $script:hudInstallCompleted = $true
+        if ($senderTimer) { $senderTimer.Stop(); $senderTimer.IsEnabled = $false }
         Remove-Job $installJob -Force -ErrorAction SilentlyContinue
 
         $btnInstallHudDeps.IsEnabled = $true
         $btnInstallHudDeps.Content = "📦 Install Dependencies (New PC)"
-        $txtStatusBar.Text = "Dependency installation complete."
+        $txtStatusBar.Text = "Hardware HUD dependencies verified and installed."
 
-        [System.Windows.MessageBox]::Show("Hardware HUD Dependency installation complete!`n`nYou can now launch any of the 3 Hardware HUD presets.", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        [System.Windows.MessageBox]::Show("Hardware HUD Dependency installation complete!`n`nbtop4win and system telemetry packages are ready to use.", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     })
     $timerJob.Start()
 })
@@ -3214,9 +3277,65 @@ $btnLaunchTrayCompanion.Add_Click({
 $script:UpdateCheckPS = $null
 $script:UpdateCheckHandle = $null
 $script:UpdateCheckSilent = $true
+$script:LatestRelease = $null
 
 $script:updatePollTimer = New-Object System.Windows.Threading.DispatcherTimer
 $script:updatePollTimer.Interval = [TimeSpan]::FromMilliseconds(500)
+
+function Invoke-OneClickUpdate {
+    if (-not $script:LatestRelease) { return }
+    $remoteTag = $script:LatestRelease.tag_name
+
+    $zipUrl = $null
+    if ($script:LatestRelease.assets) {
+        $asset = @($script:LatestRelease.assets) | Where-Object { $_.name -like "*.zip" } | Select-Object -First 1
+        if ($asset) { $zipUrl = $asset.browser_download_url }
+    }
+    if (-not $zipUrl) {
+        $zipUrl = $script:LatestRelease.zipball_url
+    }
+    if (-not $zipUrl) {
+        [System.Diagnostics.Process]::Start("https://github.com/$script:GitHubRepo/releases/latest") | Out-Null
+        return
+    }
+
+    $msg = "1-Click Auto Update to $remoteTag`n`n" +
+           "Game Booster will download the update package, replace files, and restart automatically.`n`n" +
+           "Do you want to proceed?"
+    $res = [System.Windows.MessageBox]::Show($window, $msg, "1-Click Auto Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    if ($res -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+    $txtStatusBar.Text = "Downloading update $remoteTag in background..."
+    if ($btnCheckUpdates) { $btnCheckUpdates.IsEnabled = $false }
+
+    try {
+        $tempZip = Join-Path $env:TEMP "GameBooster_Update.zip"
+        $updaterBat = Join-Path $env:TEMP "GameBooster_Updater.bat"
+        $appDir = $RootDir
+        $exePath = Join-Path $RootDir "GameBooster.exe"
+
+        [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $zipUrl -OutFile $tempZip -UseBasicParsing -TimeoutSec 90
+
+        $batContent = @"
+@echo off
+timeout /t 2 /nobreak >nul
+powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "try { Expand-Archive -Path '$tempZip' -DestinationPath '$appDir' -Force; Remove-Item '$tempZip' -Force -ErrorAction SilentlyContinue } catch {}"
+if exist "$exePath" (
+    start "" "$exePath"
+)
+del "%~f0"
+"@
+        Set-Content -Path $updaterBat -Value $batContent -Encoding ASCII -Force
+
+        Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"$updaterBat`"" -WindowStyle Hidden
+        Close-HardwareHudAction
+        $window.Close()
+    } catch {
+        [System.Windows.MessageBox]::Show($window, "Auto-update encountered an error: $_`nOpening GitHub Releases page instead.", "Update Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        [System.Diagnostics.Process]::Start("https://github.com/$script:GitHubRepo/releases/latest") | Out-Null
+    }
+}
 
 function Complete-AppUpdateCheck {
     if (-not $script:UpdateCheckPS -or -not $script:UpdateCheckHandle) { return }
@@ -3258,6 +3377,7 @@ function Complete-AppUpdateCheck {
         $localVer = [Version]::new(($lParts -join '.'))
 
         if ($remoteVer -gt $localVer) {
+            $script:LatestRelease = $release
             if ($pillUpdateAvailable) {
                 $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Visible
             }
@@ -3265,15 +3385,10 @@ function Complete-AppUpdateCheck {
                 $txtUpdateVersion.Text = "🚀 Update: $remoteTag"
             }
             if ($txtStatusBar) {
-                $txtStatusBar.Text = "Update available: $remoteTag (Click update pill to download)"
+                $txtStatusBar.Text = "Update available: $remoteTag (Click update pill to 1-click update)"
             }
             if (-not $isSilent) {
-                $msg = "A new version of Game Booster is available!`n`nInstalled Version: v$script:AppVersion`nLatest Release: $remoteTag`n`nWould you like to open the GitHub Releases page to download it?"
-                $res = [System.Windows.MessageBox]::Show($window, $msg, "Game Booster Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Information)
-                if ($res -eq [System.Windows.MessageBoxResult]::Yes) {
-                    $targetUrl = if ($release.html_url) { $release.html_url } else { "https://github.com/$script:GitHubRepo/releases/latest" }
-                    [System.Diagnostics.Process]::Start($targetUrl) | Out-Null
-                }
+                Invoke-OneClickUpdate
             }
         } else {
             if ($pillUpdateAvailable) {
@@ -3340,7 +3455,7 @@ if ($btnCheckUpdates) {
 
 if ($pillUpdateAvailable) {
     $pillUpdateAvailable.Add_MouseLeftButtonDown({
-        [System.Diagnostics.Process]::Start("https://github.com/$script:GitHubRepo/releases/latest") | Out-Null
+        Invoke-OneClickUpdate
     })
 }
 
@@ -3350,6 +3465,7 @@ Reload-GameLibraryGrid
 Update-TweaksDisplay
 Update-StandbyDisplay
 Update-ShaderDisplay
+Initialize-ServerRadarGrid
 Reload-CompanionsGrid
 Reload-WhitelistGrid
 Reload-RestoreGrid
@@ -3357,6 +3473,7 @@ Reload-CrashGrid
 Update-DaemonIndicators
 Update-HudCoordinateFields
 Update-OsdSettingsFields
+
 # Auto-refresh when tabs change
 if ($mainTabs) {
     $mainTabs.Add_SelectionChanged({
@@ -3365,7 +3482,7 @@ if ($mainTabs) {
             switch ($mainTabs.SelectedIndex) {
                 0 { Reload-ProcessGrid; Update-StandbyDisplay }
                 1 { Reload-GameLibraryGrid }
-                2 { Update-TweaksDisplay }
+                2 { Update-TweaksDisplay; if ($script:RadarList.Count -eq 0) { Initialize-ServerRadarGrid } }
                 5 { Reload-WhitelistGrid }
                 6 { Reload-RestoreGrid }
             }
@@ -3386,8 +3503,20 @@ $script:daemonTimer.Start()
 # Background silent update check
 Start-AppUpdateCheck -silent $true
 
+# Window Closing Handler (Force close active HUD terminal & monitors on exit)
+$window.Add_Closing({
+    Write-AppLog "Game Booster window closing. Cleaning up Hardware HUD and background timers..."
+    Close-HardwareHudAction
+    if ($script:radarTimer) { $script:radarTimer.Stop() }
+    if ($script:daemonTimer) { $script:daemonTimer.Stop() }
+    if ($script:updatePollTimer) { $script:updatePollTimer.Stop() }
+})
+
 # Show Window
 $window.ShowDialog() | Out-Null
+
+# Post-close cleanup safeguard
+Close-HardwareHudAction
 
 
 

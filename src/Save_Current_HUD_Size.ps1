@@ -29,6 +29,47 @@ public class WindowSaver {
     [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+
+    public static bool GetWindowRectForPid(uint targetPid, out RECT rect) {
+        rect = new RECT();
+        IntPtr found = IntPtr.Zero;
+        IntPtr hDesk = OpenDesktop("Default", 0, false, 0x01FF);
+        if (hDesk != IntPtr.Zero) {
+            EnumDesktopWindows(hDesk, delegate(IntPtr hWnd, IntPtr lParam) {
+                uint pid = 0;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (pid == targetPid && IsWindowVisible(hWnd)) {
+                    RECT r;
+                    GetWindowRect(hWnd, out r);
+                    if ((r.Right - r.Left) > 200 && (r.Bottom - r.Top) > 200) {
+                        found = hWnd;
+                        return false;
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+            CloseDesktop(hDesk);
+        }
+        if (found == IntPtr.Zero) {
+            EnumWindows(delegate(IntPtr hWnd, IntPtr lParam) {
+                uint pid = 0;
+                GetWindowThreadProcessId(hWnd, out pid);
+                if (pid == targetPid && IsWindowVisible(hWnd)) {
+                    RECT r;
+                    GetWindowRect(hWnd, out r);
+                    if ((r.Right - r.Left) > 200 && (r.Bottom - r.Top) > 200) {
+                        found = hWnd;
+                        return false;
+                    }
+                }
+                return true;
+            }, IntPtr.Zero);
+        }
+        if (found != IntPtr.Zero) {
+            return GetWindowRect(found, out rect);
+        }
+        return false;
+    }
 }
 "@ -ErrorAction SilentlyContinue
 
@@ -39,44 +80,14 @@ if (-not $termProcs) {
     exit 1
 }
 
-$targetPid = ($termProcs | Sort-Object StartTime -Descending | Select-Object -First 1).Id
 $script:foundRect = $null
+$rectOut = New-Object WindowSaver+RECT
 
-# Search Default desktop
-$hDesk = [WindowSaver]::OpenDesktop("Default", 0, $false, 0x01FF)
-if ($hDesk -ne [IntPtr]::Zero) {
-    [WindowSaver]::EnumDesktopWindows($hDesk, {
-        param($hWnd, $lParam)
-        $procOut = 0
-        [WindowSaver]::GetWindowThreadProcessId($hWnd, [ref]$procOut) | Out-Null
-        if ($procOut -eq $targetPid -and [WindowSaver]::IsWindowVisible($hWnd)) {
-            $r = New-Object WindowSaver+RECT
-            [WindowSaver]::GetWindowRect($hWnd, [ref]$r) | Out-Null
-            if (($r.Right - $r.Left) -gt 200 -and ($r.Bottom - $r.Top) -gt 200) {
-                $script:foundRect = $r
-                return $false
-            }
-        }
-        return $true
-    }, [IntPtr]::Zero) | Out-Null
-    [WindowSaver]::CloseDesktop($hDesk) | Out-Null
-}
-
-if (-not $script:foundRect) {
-    [WindowSaver]::EnumWindows({
-        param($hWnd, $lParam)
-        $procOut = 0
-        [WindowSaver]::GetWindowThreadProcessId($hWnd, [ref]$procOut) | Out-Null
-        if ($procOut -eq $targetPid -and [WindowSaver]::IsWindowVisible($hWnd)) {
-            $r = New-Object WindowSaver+RECT
-            [WindowSaver]::GetWindowRect($hWnd, [ref]$r) | Out-Null
-            if (($r.Right - $r.Left) -gt 200 -and ($r.Bottom - $r.Top) -gt 200) {
-                $script:foundRect = $r
-                return $false
-            }
-        }
-        return $true
-    }, [IntPtr]::Zero) | Out-Null
+foreach ($tp in ($termProcs | Sort-Object StartTime -Descending)) {
+    if ([WindowSaver]::GetWindowRectForPid([uint32]$tp.Id, [ref]$rectOut)) {
+        $script:foundRect = $rectOut
+        break
+    }
 }
 
 if ($script:foundRect) {
