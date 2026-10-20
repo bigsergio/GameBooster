@@ -90,3 +90,36 @@ function Test-GamingRadarPing {
     return @($results)
 }
 
+
+function Test-SingleRadarPing {
+    param(
+        [string]$HostName,
+        [int]$TimeoutMs = 800
+    )
+    if ([string]::IsNullOrWhiteSpace($HostName)) {
+        return [PSCustomObject]@{
+            PingMs  = -1
+            Latency = "INVALID"
+            Quality = "OFFLINE"
+        }
+    }
+    try {
+        $p = New-Object System.Net.NetworkInformation.Ping
+        $reply = $p.Send($HostName, $TimeoutMs)
+        $ms = if ($reply -and $reply.Status -eq [System.Net.NetworkInformation.IPStatus]::Success) { [int]$reply.RoundtripTime } else { -1 }
+        $statusStr = if ($ms -ge 0) { "${ms} ms" } else { "TIMEOUT" }
+        $quality = if ($ms -lt 0) { "OFFLINE" } elseif ($ms -le 25) { "EXCELLENT" } elseif ($ms -le 55) { "GOOD" } else { "HIGH" }
+        try { $p.Dispose() } catch {}
+        return [PSCustomObject]@{
+            PingMs  = $ms
+            Latency = $statusStr
+            Quality = $quality
+        }
+    } catch {
+        return [PSCustomObject]@{
+            PingMs  = -1
+            Latency = "FAILED"
+            Quality = "OFFLINE"
+        }
+    }
+}

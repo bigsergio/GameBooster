@@ -12,11 +12,7 @@
 **The Modern, Autonomous Gaming Performance & Hardware Telemetry Suite for Windows 10 & 11.**  
 *Engineered for competitive esports, high-refresh displays, and micro-stutter elimination.*
 
-[Download Latest Release](https://github.com/bigsergio/GameBooster/releases) • [Changelog](CHANGELOG.md) • [Features](#-key-features) • [Screenshots](#-interface--in-game-showcase) • [Anti-Cheat Safety](#️-anti-cheat--security-guarantee) • [Portuguese Guide](assets/infographic_pt.png)
-
-<br>
-
-[![Game Booster PRO Dashboard](assets/dashboard_tweaks.png)](https://github.com/bigsergio/GameBooster/releases)
+[Download Latest Release](https://github.com/bigsergio/GameBooster/releases) • [Changelog](CHANGELOG.md) • [Features](#-key-features) • [Anti-Cheat Safety](#️-anti-cheat--security-guarantee)
 
 </div>
 
@@ -36,36 +32,6 @@ Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DL
 > • **Auto-Watcher Execution Fix:** Fixed `Start-Process -Wait` syntax ensuring zero-click boost triggers the exact moment games launch.
 > • **Active Game & Service Safeguards:** Monitored games and hardware RGB suites (Razer, Logitech, Corsair) are permanently protected from termination.
 > • See full details in [`CHANGELOG.md`](CHANGELOG.md).
-
----
-
-## 📸 Interface & In-Game Showcase
-
-<div align="center">
-
-### ⚡ 1-Click Tweaks, Standby Purge & Server Ping Radar
-*Monitor and optimize Windows low-latency subsystems, flush standby memory, clean shader caches, and track server pings.*
-![1-Click Tweaks and Radar](assets/dashboard_tweaks.png)
-
-<br>
-
-### 🖥️ Dual-Monitor Terminal HUD & Streamer-Branded In-Game OSD
-*Dock full-screen hardware telemetry on secondary monitors (`btop4win` + `bottom` + live ping graph) alongside an unobtrusive, click-through in-game transparent OSD.*
-![Hardware HUD and In-Game OSD](assets/hud_osd_showcase.png)
-
-<br>
-
-### 🩺 Windows Event Crash Diagnostics & Health Check
-*Inspect application crashes, isolate faulting modules (`ntdll.dll`, `flutter_windows.dll`, graphics drivers), and get instant root-cause analysis.*
-![Crash Diagnostics](assets/crash_diagnostics.png)
-
-<br>
-
-### 🚀 Automated Companion Launcher
-*Automatically start your favorite companion tools (Discord, OBS, RTSS) when monitored games launch, with custom startup delays.*
-![Companions & Auto-Start](assets/companions_autostart.png)
-
-</div>
 
 ---
 
@@ -125,13 +91,8 @@ Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DL
 
 ```text
 GameBooster/
-├── assets/                     # Application branding, screenshots, and media
-│   ├── gamebooster.ico
-│   ├── dashboard_tweaks.png    # Tweaks & Server Radar screenshot
-│   ├── hud_osd_showcase.png    # Live HUD & In-game OSD showcase
-│   ├── crash_diagnostics.png   # Event crash diagnostics screenshot
-│   ├── companions_autostart.png# Auto-start companion screenshot
-│   └── infographic_pt.png      # Portuguese infographic summary
+├── assets/                     # Application icons and branding (gamebooster.ico)
+│   └── gamebooster.ico
 ├── src/                        # Core application source code
 │   ├── Launcher/               # Elevated C# Native Wrapper
 │   │   ├── Program.cs          # Elevated single-instance launcher

@@ -735,7 +735,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     </Grid>
 
                     <!-- Process DataGrid -->
-                    <DataGrid Name="GridProcesses" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended">
+                    <DataGrid Name="GridProcesses" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" SelectionMode="Extended">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Name="MenuCtxWhitelistSession" Header="🛡️ Whitelist for this Session (Keep Open)" Foreground="#38BDF8" FontWeight="SemiBold"/>
@@ -833,12 +833,12 @@ Write-AppLog "Building Modern WPF Interface..."
                     </Grid>
 
                     <!-- Game List DataGrid -->
-                    <DataGrid Name="GridGameLibrary" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
+                    <DataGrid Name="GridGameLibrary" Grid.Row="2" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Game Title" Binding="{Binding Title}" Width="240" FontWeight="Bold"/>
-                            <DataGridTextColumn Header="Process Name (.exe)" Binding="{Binding ProcessName}" Width="180"/>
-                            <DataGridTextColumn Header="Platform" Binding="{Binding Platform}" Width="120"/>
-                            <DataGridTextColumn Header="Executable Path" Binding="{Binding ExePath}" Width="*"/>
+                            <DataGridTextColumn Header="Game Title" Binding="{Binding Title}" Width="240" FontWeight="Bold" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Process Name (.exe)" Binding="{Binding ProcessName}" Width="180" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Platform" Binding="{Binding Platform}" Width="120" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Executable Path" Binding="{Binding ExePath}" Width="*" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -1047,17 +1047,28 @@ Write-AppLog "Building Modern WPF Interface..."
                                 </StackPanel>
                             </Grid>
 
-                            <DataGrid Name="GridServerRadar" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
+                            <DataGrid Name="GridServerRadar" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow">
+                                <DataGrid.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Name="MenuRadarPingSingle" Header="🎯 Ping This Server Now" Foreground="#38BDF8" FontWeight="SemiBold"/>
+                                        <Separator/>
+                                        <MenuItem Name="MenuRadarPingContinuous" Header="⚡ Continuous Ping Test (Live Console)" Foreground="#FBBF24"/>
+                                        <MenuItem Name="MenuRadarTraceroute" Header="🌐 Trace Route to Server (tracert)" Foreground="#A78BFA"/>
+                                        <Separator/>
+                                        <MenuItem Name="MenuRadarCopyHost" Header="📋 Copy Server Host / IP" Foreground="#E2E8F0"/>
+                                        <MenuItem Name="MenuRadarCopyDetails" Header="📋 Copy Server Details" Foreground="#94A3B8"/>
+                                    </ContextMenu>
+                                </DataGrid.ContextMenu>
                                 <DataGrid.Columns>
-                                    <DataGridTextColumn Header="Region" Binding="{Binding Region}" Width="160" FontWeight="Bold"/>
-                                    <DataGridTextColumn Header="Datacenter Location" Binding="{Binding Location}" Width="200"/>
-                                    <DataGridTextColumn Header="Host / Cluster IP" Binding="{Binding Host}" Width="160"/>
-                                    <DataGridTextColumn Header="Ping (ms)" Binding="{Binding PingMs}" Width="90" FontWeight="ExtraBold"/>
-                                    <DataGridTextColumn Header="Quality" Binding="{Binding Status}" Width="*"/>
+                                    <DataGridTextColumn Header="Region" Binding="{Binding Region}" Width="160" FontWeight="Bold" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Datacenter Location" Binding="{Binding Location}" Width="200" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Host / Cluster IP" Binding="{Binding Host}" Width="160" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Ping (ms)" Binding="{Binding PingMs}" Width="90" FontWeight="ExtraBold" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Quality" Binding="{Binding Status}" Width="*" IsReadOnly="True"/>
                                 </DataGrid.Columns>
                             </DataGrid>
 
-                            <TextBlock Grid.Row="2" Text="* Ping times are measured via ICMP Echo packets with 0ms interval socket batching." Foreground="#64748B" FontSize="10" Margin="0,8,0,0"/>
+                            <TextBlock Grid.Row="2" Text="* Right-click any server to ping individually, launch continuous live ping, trace route, or copy IP. Double-click to ping immediately." Foreground="#64748B" FontSize="10" Margin="0,8,0,0"/>
                         </Grid>
                     </Border>
                 </Grid>
@@ -1248,12 +1259,12 @@ Write-AppLog "Building Modern WPF Interface..."
                         </StackPanel>
                     </Grid>
 
-                    <DataGrid Name="GridCompanions" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
+                    <DataGrid Name="GridCompanions" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" SelectionMode="Single">
                         <DataGrid.Columns>
                             <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, UpdateSourceTrigger=PropertyChanged}" Width="70"/>
-                            <DataGridTextColumn Header="Application Name" Binding="{Binding Name}" Width="200" FontWeight="Bold"/>
+                            <DataGridTextColumn Header="Application Name" Binding="{Binding Name}" Width="200" FontWeight="Bold" IsReadOnly="True"/>
                             <DataGridTextColumn Header="Delay (s)" Binding="{Binding DelaySeconds}" Width="80"/>
-                            <DataGridTextColumn Header="Executable Path" Binding="{Binding Path}" Width="*"/>
+                            <DataGridTextColumn Header="Executable Path" Binding="{Binding Path}" Width="*" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -1289,11 +1300,11 @@ Write-AppLog "Building Modern WPF Interface..."
                     </Border>
 
                     <!-- Whitelist DataGrid -->
-                    <DataGrid Name="GridWhitelist" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Extended">
+                    <DataGrid Name="GridWhitelist" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Protected Process" Binding="{Binding ProcessName}" Width="220" FontWeight="Bold"/>
-                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="160"/>
-                            <DataGridTextColumn Header="Protection Reason" Binding="{Binding Reason}" Width="*"/>
+                            <DataGridTextColumn Header="Protected Process" Binding="{Binding ProcessName}" Width="220" FontWeight="Bold" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="160" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Protection Reason" Binding="{Binding Reason}" Width="*" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -1322,7 +1333,7 @@ Write-AppLog "Building Modern WPF Interface..."
 
                     <TextBlock Grid.Row="0" Text="Applications closed by Game Mode in the active session. Right-click or use buttons to restore individually:" Foreground="#94A3B8" Margin="0,0,0,8"/>
 
-                    <DataGrid Name="GridRestoreSession" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
+                    <DataGrid Name="GridRestoreSession" Grid.Row="1" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
                                 <MenuItem Name="MenuCtxRestoreOne" Header="🔄 Restore This Application" Foreground="#38BDF8" FontWeight="SemiBold"/>
@@ -1332,10 +1343,10 @@ Write-AppLog "Building Modern WPF Interface..."
                             </ContextMenu>
                         </DataGrid.ContextMenu>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Application Name" Binding="{Binding Name}" Width="180" FontWeight="Bold"/>
-                            <DataGridTextColumn Header="PID" Binding="{Binding Id}" Width="70"/>
-                            <DataGridTextColumn Header="RAM Freed (MB)" Binding="{Binding RAM_MB}" Width="110"/>
-                            <DataGridTextColumn Header="Executable Path" Binding="{Binding Path}" Width="*"/>
+                            <DataGridTextColumn Header="Application Name" Binding="{Binding Name}" Width="180" FontWeight="Bold" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="PID" Binding="{Binding Id}" Width="70" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="RAM Freed (MB)" Binding="{Binding RAM_MB}" Width="110" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Executable Path" Binding="{Binding Path}" Width="*" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
 
@@ -1378,14 +1389,14 @@ Write-AppLog "Building Modern WPF Interface..."
 
                     <!-- Crash Events DataGrid with high contrast readable styling -->
                     <Border Grid.Row="1" Background="#0F172A" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Margin="0,0,0,10">
-                        <DataGrid Name="GridCrashEvents" AutoGenerateColumns="False" CanUserAddRows="False" SelectionMode="Single">
+                        <DataGrid Name="GridCrashEvents" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow">
                             <DataGrid.Columns>
-                                <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40" FontWeight="Bold"/>
-                                <DataGridTextColumn Header="Faulting Application" Binding="{Binding AppName}" Width="180" FontWeight="Bold"/>
-                                <DataGridTextColumn Header="Faulting Module" Binding="{Binding ModuleName}" Width="160"/>
-                                <DataGridTextColumn Header="Exception Code" Binding="{Binding ExceptionCode}" Width="130"/>
-                                <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="160"/>
-                                <DataGridTextColumn Header="Brief Details" Binding="{Binding Summary}" Width="*"/>
+                                <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40" FontWeight="Bold" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Faulting Application" Binding="{Binding AppName}" Width="180" FontWeight="Bold" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Faulting Module" Binding="{Binding ModuleName}" Width="160" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Exception Code" Binding="{Binding ExceptionCode}" Width="130" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Timestamp" Binding="{Binding Timestamp}" Width="160" IsReadOnly="True"/>
+                                <DataGridTextColumn Header="Brief Details" Binding="{Binding Summary}" Width="*" IsReadOnly="True"/>
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
@@ -1500,6 +1511,11 @@ $btnCleanShaders           = $window.FindName("BtnCleanShaders")
 $gridServerRadar           = $window.FindName("GridServerRadar")
 $btnPingRadarNow           = $window.FindName("BtnPingRadarNow")
 $chkAutoRadar              = $window.FindName("ChkAutoRadar")
+$menuRadarPingSingle       = $window.FindName("MenuRadarPingSingle")
+$menuRadarPingContinuous   = $window.FindName("MenuRadarPingContinuous")
+$menuRadarTraceroute       = $window.FindName("MenuRadarTraceroute")
+$menuRadarCopyHost         = $window.FindName("MenuRadarCopyHost")
+$menuRadarCopyDetails      = $window.FindName("MenuRadarCopyDetails")
 
 # Tab 4
 $btnLaunchHud              = $window.FindName("BtnLaunchHud")
@@ -2819,6 +2835,111 @@ $script:radarTimer.Add_Tick({
 
 $chkAutoRadar.Add_Checked({ $script:radarTimer.Start() })
 $chkAutoRadar.Add_Unchecked({ $script:radarTimer.Stop() })
+
+function Ping-SingleRadarEndpoint {
+    $sel = $gridServerRadar.SelectedItem
+    if (-not $sel) { return }
+    $hostTarget = $sel.Host
+    $cluster = $sel.Region
+    $txtStatusBar.Text = "Pinging $cluster ($hostTarget)..."
+
+    $sel.PingMs = "..."
+    $sel.Latency = "Testing"
+    $sel.Status = "Pinging"
+    if ($gridServerRadar.Items) { $gridServerRadar.Items.Refresh() }
+
+    $res = Test-SingleRadarPing -HostName $hostTarget -TimeoutMs 900
+    $sel.PingMs = if ($res.PingMs -ge 0) { $res.PingMs } else { "-" }
+    $sel.Latency = $res.Latency
+    $sel.Status = $res.Quality
+
+    if ($gridServerRadar.Items) { $gridServerRadar.Items.Refresh() }
+
+    if ($res.PingMs -ge 0) {
+        $txtStatusBar.Text = "Ping to $cluster ($hostTarget): $($res.PingMs) ms ($($res.Quality))"
+    } else {
+        $txtStatusBar.Text = "Ping to $cluster ($hostTarget): Request timed out / OFFLINE."
+    }
+}
+
+# Right-click selection helper for Radar DataGrid
+$gridServerRadar.Add_PreviewMouseRightButtonDown({
+    param($sender, $e)
+    try {
+        $dep = $e.OriginalSource
+        while ($dep -ne $null -and -not ($dep -is [System.Windows.Controls.DataGridRow])) {
+            $dep = [System.Windows.Media.VisualTreeHelper]::GetParent($dep)
+        }
+        if ($dep -is [System.Windows.Controls.DataGridRow] -and $dep.Item) {
+            $gridServerRadar.SelectedItem = $dep.Item
+        }
+    } catch {}
+})
+
+# Double-click to ping single server
+$gridServerRadar.Add_MouseDoubleClick({
+    param($sender, $e)
+    try {
+        $dep = $e.OriginalSource
+        while ($dep -ne $null -and -not ($dep -is [System.Windows.Controls.DataGridRow])) {
+            $dep = [System.Windows.Media.VisualTreeHelper]::GetParent($dep)
+        }
+        if ($dep -is [System.Windows.Controls.DataGridRow] -and $dep.Item) {
+            $gridServerRadar.SelectedItem = $dep.Item
+            Ping-SingleRadarEndpoint
+        }
+    } catch {}
+})
+
+# Context Menu: Ping Single Server
+if ($menuRadarPingSingle) {
+    $menuRadarPingSingle.Add_Click({ Ping-SingleRadarEndpoint })
+}
+
+# Context Menu: Continuous Ping (Live Console)
+if ($menuRadarPingContinuous) {
+    $menuRadarPingContinuous.Add_Click({
+        $sel = $gridServerRadar.SelectedItem
+        if (-not $sel) { return }
+        $hostTarget = $sel.Host
+        $cluster = $sel.Region
+        $txtStatusBar.Text = "Launching continuous live ping for $cluster ($hostTarget)..."
+        Start-Process "cmd.exe" -ArgumentList "/c title Live Ping - $cluster & ping $hostTarget -t"
+    })
+}
+
+# Context Menu: Trace Route (tracert)
+if ($menuRadarTraceroute) {
+    $menuRadarTraceroute.Add_Click({
+        $sel = $gridServerRadar.SelectedItem
+        if (-not $sel) { return }
+        $hostTarget = $sel.Host
+        $cluster = $sel.Region
+        $txtStatusBar.Text = "Tracing route to $cluster ($hostTarget)..."
+        Start-Process "cmd.exe" -ArgumentList "/k title Trace Route - $cluster & tracert $hostTarget"
+    })
+}
+
+# Context Menu: Copy Host / IP
+if ($menuRadarCopyHost) {
+    $menuRadarCopyHost.Add_Click({
+        $sel = $gridServerRadar.SelectedItem
+        if (-not $sel) { return }
+        [System.Windows.Clipboard]::SetText($sel.Host)
+        $txtStatusBar.Text = "Copied '$($sel.Host)' to clipboard."
+    })
+}
+
+# Context Menu: Copy Details
+if ($menuRadarCopyDetails) {
+    $menuRadarCopyDetails.Add_Click({
+        $sel = $gridServerRadar.SelectedItem
+        if (-not $sel) { return }
+        $details = "Cluster: $($sel.Region)`r`nLocation: $($sel.Location)`r`nHost/IP: $($sel.Host)`r`nPing: $($sel.PingMs) ms`r`nQuality: $($sel.Status)"
+        [System.Windows.Clipboard]::SetText($details)
+        $txtStatusBar.Text = "Copied details for '$($sel.Region)' to clipboard."
+    })
+}
 
 # ---------------------------------------------------------------------------
 # TAB 4: HARDWARE HUD & IN-GAME OSD
