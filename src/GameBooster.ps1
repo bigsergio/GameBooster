@@ -954,7 +954,7 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,6">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -965,7 +965,25 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Button Name="BtnApplyAllTweaks" Content="⚡ 1-Click Apply All Gaming Tweaks" Background="#10B981" Foreground="#022C22" Height="32" FontWeight="ExtraBold"/>
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="PowerShell 7 Runtime Engine" VerticalAlignment="Center" Foreground="#F8FAFC"/>
+                                        <Border Name="BadgePsEngine" Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="8,2">
+                                            <TextBlock Name="TxtBadgePsEngine" Text="CHECKING" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1"/>
+                                        </Border>
+                                    </Grid>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Name="BtnApplyAllTweaks" Grid.Column="0" Content="⚡ 1-Click Apply All Gaming Tweaks" Background="#10B981" Foreground="#022C22" Height="32" FontWeight="ExtraBold" Margin="0,0,6,0"/>
+                                        <Button Name="BtnUpgradePs7" Grid.Column="1" Content="🚀 Upgrade PS7" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Foreground="#38BDF8" Height="32" Padding="12,0" FontWeight="Bold" ToolTip="Install or switch to PowerShell 7 for 2x faster performance"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
 
@@ -1471,7 +1489,10 @@ $txtBadgeGameMode          = $window.FindName("TxtBadgeGameMode")
 $badgeGameMode             = $window.FindName("BadgeGameMode")
 $txtBadgeTcp               = $window.FindName("TxtBadgeTcp")
 $badgeTcp                  = $window.FindName("BadgeTcp")
+$txtBadgePsEngine          = $window.FindName("TxtBadgePsEngine")
+$badgePsEngine             = $window.FindName("BadgePsEngine")
 $btnApplyAllTweaks         = $window.FindName("BtnApplyAllTweaks")
+$btnUpgradePs7             = $window.FindName("BtnUpgradePs7")
 $txtStandbySize            = $window.FindName("TxtStandbySize")
 $btnPurgeStandbyCard       = $window.FindName("BtnPurgeStandbyCard")
 $txtShaderSize             = $window.FindName("TxtShaderSize")
@@ -2492,6 +2513,34 @@ function Update-TweaksDisplay {
         $txtBadgeTcp.Text = "OFF"
         $txtBadgeTcp.Foreground = [System.Windows.Media.Brushes]::LightGray
     }
+
+    if ($txtBadgePsEngine) {
+        if ($t.IsPs7Running) {
+            $badgePsEngine.Background = [System.Windows.Media.Brushes]::DarkGreen
+            $txtBadgePsEngine.Text = "ACTIVE (v$($t.CurrentPsVersion))"
+            $txtBadgePsEngine.Foreground = [System.Windows.Media.Brushes]::LightGreen
+            if ($btnUpgradePs7) {
+                $btnUpgradePs7.Content = "🚀 PS7 Active"
+                $btnUpgradePs7.ToolTip = "Game Booster is currently running on the high-performance PowerShell 7 engine. Click to check for updates."
+            }
+        } elseif ($t.IsPs7Installed) {
+            $badgePsEngine.Background = [System.Windows.Media.Brushes]::DarkSlateBlue
+            $txtBadgePsEngine.Text = "INSTALLED (PS7)"
+            $txtBadgePsEngine.Foreground = [System.Windows.Media.Brushes]::LightCyan
+            if ($btnUpgradePs7) {
+                $btnUpgradePs7.Content = "⚡ Switch to PS7"
+                $btnUpgradePs7.ToolTip = "PowerShell 7 is installed! Click to restart Game Booster in PowerShell 7 for 2x faster performance."
+            }
+        } else {
+            $badgePsEngine.Background = [System.Windows.Media.Brushes]::DarkRed
+            $txtBadgePsEngine.Text = "LEGACY (PS 5.1)"
+            $txtBadgePsEngine.Foreground = [System.Windows.Media.Brushes]::LightSalmon
+            if ($btnUpgradePs7) {
+                $btnUpgradePs7.Content = "⚡ Install PS7 (2x Fast)"
+                $btnUpgradePs7.ToolTip = "Click to automatically download and install PowerShell 7 (.NET Core) for faster performance."
+            }
+        }
+    }
 }
 
 function Update-StandbyDisplay {
@@ -2536,6 +2585,145 @@ $btnApplyAllTweaks.Add_Click({
         $btnApplyAllTweaks.IsEnabled = $true
         $btnApplyAllTweaks.Content = "⚡ 1-Click Apply All Gaming Tweaks"
     }
+})
+
+# Upgrade / Switch / Install PowerShell 7 Button
+$btnUpgradePs7.Add_Click({
+    $t = Get-GamingTweaksStatus
+    if ($t.IsPs7Running) {
+        $ans = [System.Windows.MessageBox]::Show(
+            "Game Booster is already running on PowerShell $($t.CurrentPsVersion) (High-Performance .NET Core Engine)!`n`n" +
+            "Would you like to check for PowerShell 7 updates via Windows Package Manager (Winget)?",
+            "PowerShell 7 Active",
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Information
+        )
+        if ($ans -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+        $btnUpgradePs7.IsEnabled = $false
+        $btnUpgradePs7.Content = "Checking PS7 Updates..."
+        $txtStatusBar.Text = "Checking for PowerShell 7 updates via winget in background..."
+
+        $upJob = Start-Job -ScriptBlock {
+            winget upgrade --id Microsoft.PowerShell --source winget --accept-source-agreements --accept-package-agreements --silent
+        }
+        $timerJob = New-Object System.Windows.Threading.DispatcherTimer
+        $timerJob.Interval = [TimeSpan]::FromSeconds(2)
+        $script:psUpgradeDone = $false
+        $timerJob.Add_Tick({
+            $s = $args[0]
+            if ($script:psUpgradeDone) { if ($s) { $s.Stop(); $s.IsEnabled = $false }; return }
+            if ($upJob.State -eq "Running") { return }
+            $script:psUpgradeDone = $true
+            if ($s) { $s.Stop(); $s.IsEnabled = $false }
+            Remove-Job $upJob -Force -ErrorAction SilentlyContinue
+
+            $btnUpgradePs7.IsEnabled = $true
+            $btnUpgradePs7.Content = "🚀 PS7 Active"
+            $txtStatusBar.Text = "PowerShell 7 update check completed."
+            [System.Windows.MessageBox]::Show("PowerShell 7 upgrade verification complete!", "PowerShell 7", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        })
+        $timerJob.Start()
+        return
+    }
+
+    if ($t.IsPs7Installed) {
+        $ans = [System.Windows.MessageBox]::Show(
+            "PowerShell 7 is already installed on your system at:`n" +
+            "$($t.PwshPath)`n`n" +
+            "Would you like to restart Game Booster now using the PowerShell 7 engine for 2x faster performance?",
+            "Switch to PowerShell 7",
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Question
+        )
+        if ($ans -eq [System.Windows.MessageBoxResult]::Yes) {
+            $exePath = Join-Path $RootDir "GameBooster.exe"
+            if (Test-Path $exePath) {
+                Start-Process -FilePath $exePath
+            } else {
+                Start-Process -FilePath $t.PwshPath -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$ScriptDir\GameBooster.ps1`""
+            }
+            Close-HardwareHudAction
+            $window.Close()
+        }
+        return
+    }
+
+    # Not installed -> Prompt to install
+    $msg = "Upgrade to PowerShell 7 Runtime Engine?`n`n" +
+           "• 2x to 3x Faster Response Times: Powered by modern .NET Core (replaces legacy Windows PowerShell 5.1).`n" +
+           "• Lower RAM Overhead: Reduced CPU and garbage collection overhead during gaming.`n" +
+           "• Safe Side-by-Side Install: Does not alter or break your existing Windows 5.1 system files.`n`n" +
+           "Game Booster will download and install Microsoft PowerShell 7 automatically in the background via Winget.`n`n" +
+           "Would you like to install PowerShell 7 now?"
+
+    $ans = [System.Windows.MessageBox]::Show($msg, "Install PowerShell 7", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    if ($ans -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+    $btnUpgradePs7.IsEnabled = $false
+    $btnUpgradePs7.Content = "⏳ Installing PS7..."
+    $txtStatusBar.Text = "Installing PowerShell 7 in background via Windows Package Manager..."
+    $script:psInstallDone = $false
+
+    $job = Start-Job -ScriptBlock {
+        try {
+            winget install --id Microsoft.PowerShell --source winget --accept-source-agreements --accept-package-agreements --silent
+        } catch {}
+
+        $stdPwsh = "$env:ProgramFiles\PowerShell\7\pwsh.exe"
+        if (-not (Test-Path $stdPwsh) -and -not (Get-Command pwsh.exe -ErrorAction SilentlyContinue)) {
+            try {
+                $msiUrl = "https://github.com/PowerShell/PowerShell/releases/download/v7.4.6/PowerShell-7.4.6-win-x64.msi"
+                $tempMsi = "$env:TEMP\PowerShell7_Setup.msi"
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+                Invoke-WebRequest -Uri $msiUrl -OutFile $tempMsi -UseBasicParsing -TimeoutSec 120
+                Start-Process "msiexec.exe" -ArgumentList "/i `"$tempMsi`" /qn /norestart ADD_EXPLORER_CONTEXT_MENU_OPENPOWERSHELL=0 ADD_FILE_CONTEXT_MENU_RUNPOWERSHELL=0 ENABLE_PSREMOTING=0 REGISTER_MANIFEST=0" -Wait
+                Remove-Item $tempMsi -Force -ErrorAction SilentlyContinue
+            } catch {}
+        }
+    }
+
+    $timer = New-Object System.Windows.Threading.DispatcherTimer
+    $timer.Interval = [TimeSpan]::FromSeconds(3)
+    $timer.Add_Tick({
+        $s = $args[0]
+        if ($script:psInstallDone) { if ($s) { $s.Stop(); $s.IsEnabled = $false }; return }
+        if ($job.State -eq "Running") { return }
+
+        $script:psInstallDone = $true
+        if ($s) { $s.Stop(); $s.IsEnabled = $false }
+        Remove-Job $job -Force -ErrorAction SilentlyContinue
+
+        Update-TweaksDisplay
+        $tNew = Get-GamingTweaksStatus
+
+        if ($tNew.IsPs7Installed) {
+            $txtStatusBar.Text = "PowerShell 7 installed successfully."
+            $restart = [System.Windows.MessageBox]::Show(
+                "PowerShell 7 has been installed successfully!`n`n" +
+                "Would you like to restart Game Booster now with PowerShell 7 to activate the high-speed engine?",
+                "Installation Complete",
+                [System.Windows.MessageBoxButton]::YesNo,
+                [System.Windows.MessageBoxImage]::Information
+            )
+            if ($restart -eq [System.Windows.MessageBoxResult]::Yes) {
+                $exePath = Join-Path $RootDir "GameBooster.exe"
+                if (Test-Path $exePath) {
+                    Start-Process -FilePath $exePath
+                } else {
+                    Start-Process -FilePath $tNew.PwshPath -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$ScriptDir\GameBooster.ps1`""
+                }
+                Close-HardwareHudAction
+                $window.Close()
+            }
+        } else {
+            $btnUpgradePs7.IsEnabled = $true
+            $btnUpgradePs7.Content = "⚡ Install PS7"
+            $txtStatusBar.Text = "PowerShell 7 installation completed. Please restart your PC or terminal if changes do not appear."
+            [System.Windows.MessageBox]::Show("PowerShell 7 installation command finished. If it does not appear immediately, please restart your computer.", "Installation Notice", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        }
+    })
+    $timer.Start()
 })
 
 # Purge Standby RAM Buttons

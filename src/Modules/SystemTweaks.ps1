@@ -70,6 +70,20 @@ function Get-GamingTweaksStatus {
         }
     }
 
+    # 6. PowerShell Runtime Engine Status
+    $isPs7Running = ($PSVersionTable.PSVersion.Major -ge 7)
+    $pwshCmd = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
+    if (-not $pwshCmd) {
+        $cands = @(
+            "$env:ProgramFiles\PowerShell\7\pwsh.exe",
+            "${env:ProgramFiles(x86)}\PowerShell\7\pwsh.exe",
+            "$env:LOCALAPPDATA\Microsoft\PowerShell\7\pwsh.exe"
+        )
+        foreach ($c in $cands) { if (Test-Path $c) { $pwshCmd = $c; break } }
+    }
+    $ps7Installed = ($null -ne $pwshCmd)
+    $currentPsVer = $PSVersionTable.PSVersion.ToString()
+
     return [PSCustomObject]@{
         TimerResolutionMs = $curMs
         TimerOptimized    = $timerOptimized
@@ -78,6 +92,10 @@ function Get-GamingTweaksStatus {
         HighPerfPowerPlan = $isHighPerf
         ActivePowerPlan   = $activePlan
         TcpNoDelayEnabled = $tcpOptimized
+        IsPs7Running      = $isPs7Running
+        IsPs7Installed    = $ps7Installed
+        CurrentPsVersion  = $currentPsVer
+        PwshPath          = $pwshCmd
     }
 }
 
@@ -153,4 +171,3 @@ function Enable-UltimatePerformancePlan {
     powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
     return "Applied High Performance Power Scheme."
 }
-

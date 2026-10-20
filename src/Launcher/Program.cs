@@ -113,15 +113,48 @@ namespace GameBoosterLauncher
 
                 // Locate preferred PowerShell host (PowerShell 7 if installed, else Windows PowerShell 5.1)
                 string psHost = "powershell.exe";
-                string pwshPath = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
-                    "PowerShell", "7", "pwsh.exe"
-                );
-                if (File.Exists(pwshPath))
+                string[] pwshCandidates = new string[]
                 {
-                    psHost = pwshPath;
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "PowerShell", "7", "pwsh.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "PowerShell", "7", "pwsh.exe"),
+                    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft", "PowerShell", "7", "pwsh.exe")
+                };
+
+                foreach (string cand in pwshCandidates)
+                {
+                    if (File.Exists(cand))
+                    {
+                        psHost = cand;
+                        break;
+                    }
                 }
-                else
+
+                if (psHost == "powershell.exe")
+                {
+                    string pathEnv = Environment.GetEnvironmentVariable("PATH");
+                    if (!string.IsNullOrEmpty(pathEnv))
+                    {
+                        foreach (string p in pathEnv.Split(';'))
+                        {
+                            try
+                            {
+                                string trimmed = p.Trim();
+                                if (!string.IsNullOrEmpty(trimmed))
+                                {
+                                    string full = Path.Combine(trimmed, "pwsh.exe");
+                                    if (File.Exists(full))
+                                    {
+                                        psHost = full;
+                                        break;
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+
+                if (psHost == "powershell.exe")
                 {
                     string sysPowerShell = Path.Combine(
                         Environment.GetFolderPath(Environment.SpecialFolder.System),
