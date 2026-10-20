@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# Game Mode Booster v1.2.1 PRO
+# Game Mode Booster v1.2.2 PRO
 # Unified Gaming Performance Suite & High-Refresh Optimizer
 # Clean, Autonomous, Zero-Telemetry & GitHub-Ready
 # ============================================================================
@@ -74,7 +74,7 @@ $LogFile = Join-Path $RootDir "gamebooster.log"
 $SessionFile = Join-Path $RootDir "last_session.json"
 $TrayPidFile = Join-Path $RootDir "tray.pid"
 
-$script:AppVersion = "1.2.1"
+$script:AppVersion = "1.2.2"
 $script:GitHubRepo = "bigsergio/GameBooster"
 
 # Ensure config.json exists from template if needed
@@ -341,7 +341,7 @@ Write-AppLog "Building Modern WPF Interface..."
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Mode Booster v1.2.1 PRO"
+        Title="Game Mode Booster v1.2.2 PRO"
         Height="850" Width="1280" MinWidth="1100" MinHeight="720"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
@@ -634,7 +634,7 @@ Write-AppLog "Building Modern WPF Interface..."
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="GAME BOOSTER" FontSize="18" FontWeight="ExtraBold" Foreground="#10B981" Margin="0,0,6,0"/>
                             <Border Background="#047857" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="v1.2.1 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                <TextBlock Text="v1.2.2 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
                             </Border>
                             <Border Name="PillUpdateAvailable" Visibility="Collapsed" Background="#1E3A8A" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center" Cursor="Hand" ToolTip="New version available! Click to download latest release on GitHub">
                                 <TextBlock Name="TxtUpdateVersion" Text="🚀 Update Available" FontSize="10" FontWeight="Bold" Foreground="#60A5FA"/>
@@ -1425,7 +1425,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.2.1 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.2.2 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock Name="TxtMemorySummary" Grid.Column="1" Text="Standby RAM: Ready | Timer: 0.5ms" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 <Button Name="BtnCheckUpdates" Grid.Column="2" Content="🔄 Check Updates" Background="#1E293B" Foreground="#94A3B8" BorderBrush="#334155" FontSize="10" Padding="8,2" ToolTip="Check GitHub for the latest GameBooster release"/>
             </Grid>

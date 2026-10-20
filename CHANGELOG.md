@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.2] - 2026-10-20
+
+### ⚡ PowerShell 7 Runtime Engine Detection & 1-Click Upgrade
+- **Tab 3 Runtime Status Card:** Added real-time detection of the active PowerShell runtime engine under Windows Low-Latency Subsystems & Runtime. Displays live status badges: `ACTIVE (v7.x)` (green), `INSTALLED (PS7)` (cyan), or `LEGACY (PS 5.1)` (amber).
+- **1-Click Background Upgrade:** Clicking the upgrade button silently installs official Microsoft PowerShell 7 via `winget` (with automatic fallback to official Microsoft GitHub MSI) and prompts to restart in PS7 once complete.
+- **1-Click Runtime Engine Switch:** If PS7 is detected on the system while running under legacy PS 5.1, a single click switches and relaunches Game Booster into PowerShell 7 immediately.
+- **Smart Launcher (`GameBooster.exe`):** Automatically searches `%ProgramFiles%\PowerShell\7\pwsh.exe`, `%LocalAppData%`, and `PATH` to run on the high-performance .NET 8/9 engine before falling back to Windows PowerShell 5.1.
+
+### 🌐 Server Ping Radar Enhancements & Locked In-Cell Editing
+- **Read-Only DataGrid Cell Protection:** Eliminated cell editability bug where users could click into cells and modify text/ping values. Added `IsReadOnly="True"`, `CanUserDeleteRows="False"`, `CanUserResizeRows="False"`, and `SelectionUnit="FullRow"` across all DataGrids (`GridServerRadar`, `GridGameLibrary`, `GridWhitelist`, `GridRestoreSession`, `GridCrashEvents`).
+- **Rich Right-Click Context Menu for Radar:**
+  - `🎯 Ping This Server Now`: Immediately tests ICMP latency to the selected game cluster, updating ping ms and quality badge live.
+  - `⚡ Continuous Ping Test (Live Console)`: Launches a lightweight command window running `ping <host> -t` for real-time jitter and packet drop monitoring during gameplay.
+  - `🌐 Trace Route to Server (tracert)`: Spawns `tracert <host>` in console to detect high-latency ISP hops.
+  - `📋 Copy Server Host / IP`: Copies server address to clipboard.
+  - `📋 Copy Server Details`: Copies full cluster, location, and latency details.
+- **Double-Click Shortcut:** Double-clicking any server row automatically triggers an instant single-server ping.
+
+### 🧹 Asset Footprint & Distribution Optimization
+- **Stripped Heavy Screenshots:** Removed non-essential PNG showcase images from the repository `assets/` directory and distribution archives, reducing the release package down to a lean ~102 KB.
+- **Branding Preservation:** Maintained `assets/gamebooster.ico` for application window and system tray branding.
+
+---
+
 ## [1.2.1] - 2026-10-20
 
 ### 🚀 1-Click In-App Auto Update

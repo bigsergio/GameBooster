@@ -9,8 +9,8 @@ using System.Windows.Forms;
 [assembly: AssemblyTitle("Game Booster PRO")]
 [assembly: AssemblyProduct("Game Booster PRO")]
 [assembly: AssemblyDescription("Autonomous Gaming Performance & Hardware Telemetry Suite for Windows")]
-[assembly: AssemblyVersion("1.2.1.0")]
-[assembly: AssemblyFileVersion("1.2.1.0")]
+[assembly: AssemblyVersion("1.2.2.0")]
+[assembly: AssemblyFileVersion("1.2.2.0")]
 
 namespace GameBoosterLauncher
 {

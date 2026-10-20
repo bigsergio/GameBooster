@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# Game Booster v1.2.1 - Module: Gaming Server Latency Radar
+# Game Booster v1.2.2 - Module: Gaming Server Latency Radar
 # Asynchronous multi-target ping grid for Valve, Riot, Blizzard, AWS, and DNS
 # ============================================================================
 

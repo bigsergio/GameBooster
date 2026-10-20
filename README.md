@@ -1,8 +1,8 @@
-# ⚡ Game Booster PRO v1.2.1
+# ⚡ Game Booster PRO v1.2.2
 
 <div align="center">
 
-![Release](https://img.shields.io/badge/Release-v1.2.1-emerald?style=for-the-badge)
+![Release](https://img.shields.io/badge/Release-v1.2.2-emerald?style=for-the-badge)
 ![Windows](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D6?style=for-the-badge&logo=windows&logoColor=white)
 ![Platform](https://img.shields.io/badge/Architecture-x64-black?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)
@@ -20,17 +20,16 @@
 
 ## 📖 Overview
 
-**Game Booster PRO v1.2.1** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
+**Game Booster PRO v1.2.2** is an open-source, lightweight Windows gaming optimizer designed to maximize gaming performance, lower input latency, reclaim gigabytes of system memory, and provide real-time hardware telemetry without invasive software hooks.
 
 Unlike legacy utilities that rely on fragile `.bat` files or inject intrusive DLLs into game processes, Game Booster PRO is built on native Win32 APIs, modern WPF rendering, and a standalone elevated C# executable launcher (`GameBooster.exe`).
 
 > [!NOTE]
-> **What's New in v1.2.1:**
-> • **In-App GitHub Update Checker:** Asynchronous, non-blocking GitHub Releases updater with direct download notifications and manual check button in the status bar.
-> • **Configurable Auto-Restore Toggle:** Easily toggle whether background apps should be automatically reopened when your game exits or kept closed.
-> • **Multi-Companion Launching:** Configure multiple background companions per game (e.g. `Discord, obs64, C:\Tools\Tracker.exe`).
-> • **Auto-Watcher Execution Fix:** Fixed `Start-Process -Wait` syntax ensuring zero-click boost triggers the exact moment games launch.
-> • **Active Game & Service Safeguards:** Monitored games and hardware RGB suites (Razer, Logitech, Corsair) are permanently protected from termination.
+> **What's New in v1.2.2:**
+> • **PowerShell 7 Runtime Engine:** Live detection, 1-click in-app background installation/upgrade via Winget/MSI, and smart multi-directory launcher auto-detection.
+> • **Server Ping Radar Overhaul:** Read-only locked DataGrid cells, double-click to ping individual servers, and right-click context menu (Single ping, continuous live ping console, traceroute, copy IP/details).
+> • **System-Wide DataGrid Protection:** Read-only safety locking across all grids (Library, Whitelist, Restore, Crashes) to prevent accidental text editing.
+> • **Zero-Bloat Asset Footprint:** Stripped non-essential PNG showcase screenshots, reducing release distribution size to an ultra-lean ~102 KB.
 > • See full details in [`CHANGELOG.md`](CHANGELOG.md).
 
 ---

@@ -43,7 +43,7 @@ public class OsdWin32 {
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Booster v1.2.1 In-Game OSD" Height="42" SizeToContent="Width" MinWidth="380"
+        Title="Game Booster v1.2.2 In-Game OSD" Height="42" SizeToContent="Width" MinWidth="380"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" WindowStartupLocation="Manual">
     <Border Name="OsdBorder" Background="#D90B0F19" BorderBrush="#0284C7" BorderThickness="1.5" CornerRadius="8" Padding="12,6">
