@@ -1,6 +1,7 @@
 ﻿# ============================================================================
-# Game Booster v1.0 - Module: Standby Memory & Working Set Purge
+# Game Booster PRO v2.0 - Module: Standby Memory & Working Set Purge
 # Native Windows RAM optimization: Flushes cached Standby RAM & Trims Working Sets
+# Includes "Launcher RAM Diet": Drops active physical RAM for Chromium launchers
 # ============================================================================
 
 Add-Type @"
@@ -75,6 +76,56 @@ function Get-SystemRamStats {
     }
 }
 
+function Invoke-LauncherRamDiet {
+    param(
+        [string[]]$TargetLauncherNames = @(
+            "steamwebhelper", "Discord", "EpicGamesLauncher", "Battle.net", 
+            "Spotify", "SpotifyLauncher", "chrome", "msedge", "brave", 
+            "RazerAppEngine", "Razer Central", "ArmouryCrate", "SamsungMagician", 
+            "BlueMail", "WhatsApp.Root", "OneDrive", "Dropbox", "Slack", "Teams"
+        )
+    )
+
+    $trimmedDetails = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $totalFreedBytes = 0
+    $processedCount = 0
+
+    $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object { $TargetLauncherNames -contains $_.ProcessName }
+    foreach ($p in $procs) {
+        try {
+            if ($p.Handle) {
+                $before = $p.WorkingSet64
+                [MemoryCleaner]::EmptyWorkingSet($p.Handle) | Out-Null
+                $p.Refresh()
+                $after = $p.WorkingSet64
+
+                $freed = [math]::Max(0, ($before - $after))
+                $totalFreedBytes += $freed
+                $processedCount++
+
+                $trimmedDetails.Add([PSCustomObject]@{
+                    ProcessName = $p.ProcessName
+                    PID         = $p.Id
+                    BeforeMB    = [math]::Round($before / 1MB, 1)
+                    AfterMB     = [math]::Round($after / 1MB, 1)
+                    FreedMB     = [math]::Round($freed / 1MB, 1)
+                })
+            }
+        } catch {}
+    }
+
+    $totalFreedMB = [math]::Round($totalFreedBytes / 1MB, 1)
+    $totalFreedGB = [math]::Round($totalFreedBytes / 1GB, 2)
+
+    return [PSCustomObject]@{
+        TargetedProcessesCount = $processedCount
+        TotalFreedMB           = $totalFreedMB
+        TotalFreedGB           = $totalFreedGB
+        Details                = $trimmedDetails
+        Message                = "Launcher RAM Diet: Trimmed $processedCount background launcher processes, reclaiming ${totalFreedMB} MB physical RAM without closing any apps."
+    }
+}
+
 function Invoke-SmartMemoryPurge {
     param([string[]]$ExemptProcesses = @("GameBooster", "explorer", "dwm"))
     $before = Get-SystemRamStats
@@ -121,4 +172,3 @@ function Invoke-SmartMemoryPurge {
         Message          = "Smart Memory Purge Complete: Trimmed $trimmedCount processes and flushed Standby Cache. Freed ~$freedDisplay."
     }
 }
-

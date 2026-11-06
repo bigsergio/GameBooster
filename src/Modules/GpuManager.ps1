@@ -181,7 +181,7 @@ function Get-ProtectedGamingServicesDetails {
         "RuntimeBroker", "SearchHost", "StartMenuExperienceHost", "TextInputHost", 
         "ShellHost", "SecurityHealthSystray", "SecurityHealthService", "Sysmon64", 
         "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "smss", "wininit",
-        "sppsvc", "SearchIndexer", "MsMpEng", "NisSrv", "MpDefenderCoreService", 
+        "sppsvc", "MsMpEng", "NisSrv", "MpDefenderCoreService", 
         "DefenderSessionHelper", "MoUsoCoreWorker"
     )
     foreach ($wc in $windowsCore) {
@@ -199,4 +199,238 @@ function Get-EssentialGamingServicesWhitelist {
     $details = Get-ProtectedGamingServicesDetails
     $names = @($details | ForEach-Object { $_.ProcessName })
     return @($names | Select-Object -Unique)
+}
+
+function Get-GpuDriverDetails {
+    $gpuControllers = @(Get-CimInstance Win32_VideoController -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Name -notmatch "Basic|Virtual|RDP|Remote|VNC" })
+
+    $primaryGpu = if ($gpuControllers.Count -gt 0) { $gpuControllers[0] } else { $null }
+    $gpuName = if ($primaryGpu) { $primaryGpu.Name } else { "Generic Display Adapter" }
+    $driverVer = if ($primaryGpu) { $primaryGpu.DriverVersion } else { "Unknown" }
+    $driverDate = if ($primaryGpu -and $primaryGpu.DriverDate) {
+        try {
+            if ($primaryGpu.DriverDate -is [datetime]) {
+                $primaryGpu.DriverDate.ToString("yyyy-MM-dd")
+            } else {
+                [System.Management.ManagementDateTimeConverter]::ToDateTime($primaryGpu.DriverDate.ToString()).ToString("yyyy-MM-dd")
+            }
+        } catch {
+            "$($primaryGpu.DriverDate)".Split(" ")[0]
+        }
+    } else { "Unknown" }
+    $pnpId = if ($primaryGpu) { $primaryGpu.PNPDeviceID } else { "" }
+
+    # Detect Vendor & Display/Release Version
+    $vendor = "Unknown"
+    $displayVer = $driverVer
+
+    if ($gpuName -match "NVIDIA|GeForce|RTX|GTX|Quadro") {
+        $vendor = "NVIDIA"
+        if ($driverVer -match '(\d+)\.(\d{2})(\d{2})$') {
+            $displayVer = "Game Ready $($matches[1])$($matches[2]).$($matches[3])"
+        }
+    } elseif ($gpuName -match "AMD|Radeon|RX|Vega") {
+        $vendor = "AMD"
+        # Check AMD Registry for clean Adrenalin ReleaseVersion
+        $classKeys = @(
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0000",
+            "HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}\0001"
+        )
+        foreach ($ck in $classKeys) {
+            $rel = (Get-ItemProperty -Path $ck -Name "ReleaseVersion" -ErrorAction SilentlyContinue).ReleaseVersion
+            if ($rel) {
+                if ($rel -match "^(\d+\.\d+(\.\d+)?)") {
+                    $displayVer = "Adrenalin $($matches[1])"
+                } else {
+                    $displayVer = "Adrenalin $rel"
+                }
+                break
+            }
+        }
+        if ($displayVer -eq $driverVer) {
+            $cnVer = (Get-ItemProperty -Path "HKLM:\SOFTWARE\AMD\CN" -Name "CNVersion" -ErrorAction SilentlyContinue).CNVersion
+            if ($cnVer) { $displayVer = "Adrenalin $cnVer" }
+        }
+    } elseif ($gpuName -match "Intel|Arc|Iris|Xe") {
+        $vendor = "Intel"
+        $displayVer = "Intel Graphics $driverVer"
+    }
+
+    return [PSCustomObject]@{
+        GpuName        = $gpuName
+        Vendor         = $vendor
+        DriverVersion  = $driverVer
+        DisplayVersion = $displayVer
+        DriverDate     = $driverDate
+        PnpDeviceId    = $pnpId
+    }
+}
+
+function Check-LatestGpuDriver {
+    param(
+        [Parameter(Mandatory = $false)]
+        $CurrentDetails = $null
+    )
+
+    if (-not $CurrentDetails) {
+        $CurrentDetails = Get-GpuDriverDetails
+    }
+
+    $vendor = $CurrentDetails.Vendor
+    $installedVer = $CurrentDetails.DriverVersion
+    $installedDisplay = $CurrentDetails.DisplayVersion
+
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+
+    if ($vendor -eq "AMD") {
+        try {
+            $feed = Invoke-RestMethod -Uri "https://raw.githubusercontent.com/GPUOpen-Drivers/amd-vulkan-versions/master/amdversions.xml" -TimeoutSec 5 -ErrorAction Stop
+            $winDrivers = @($feed.amd_drivers.driver | Where-Object { $_.'operating-system' -eq "Windows" -and $_.version -notmatch "RDNA1" })
+            if ($winDrivers.Count -gt 0) {
+                $top = $winDrivers[0]
+                $latestVer = "$($top.version)"
+                $latestWinVer = "$($top.'windows-version')".TrimEnd('.')
+                $relDate = "$($top.'release-date')"
+                $dlUrl = "$($top.'download-url')"
+
+                # Look up public marketing version for installed driver if available in feed
+                $matchedCurrent = $winDrivers | Where-Object { "$($_.'windows-version')".TrimEnd('.') -eq $installedVer } | Select-Object -First 1
+                if ($matchedCurrent -and $matchedCurrent.version) {
+                    $installedDisplay = "Adrenalin $($matchedCurrent.version)"
+                }
+
+                $hasUpdate = $false
+                try {
+                    $hasUpdate = ([version]$latestWinVer -gt [version]$installedVer)
+                } catch {
+                    $hasUpdate = ($latestVer -ne $installedDisplay.Replace("Adrenalin ", "").Trim())
+                }
+
+                return [PSCustomObject]@{
+                    Vendor            = "AMD"
+                    GpuName           = $CurrentDetails.GpuName
+                    InstalledVersion  = $installedDisplay
+                    InstalledDriver   = $installedVer
+                    LatestVersion     = "Adrenalin $latestVer"
+                    LatestDriver      = $latestWinVer
+                    ReleaseDate       = $relDate
+                    HasUpdate         = $hasUpdate
+                    DownloadUrl       = $dlUrl
+                    DetailsUrl        = $dlUrl
+                    Status            = if ($hasUpdate) { "Update Available" } else { "Up to Date" }
+                    IsWHQL            = $true
+                }
+            }
+        } catch {
+            return [PSCustomObject]@{
+                Vendor           = "AMD"
+                GpuName          = $CurrentDetails.GpuName
+                InstalledVersion = $installedDisplay
+                InstalledDriver  = $installedVer
+                LatestVersion    = "Unknown"
+                HasUpdate        = $false
+                DownloadUrl      = "https://www.amd.com/en/support/download/drivers.html"
+                DetailsUrl       = "https://www.amd.com/en/support/download/drivers.html"
+                Status           = "Check Failed (Offline/Timeout)"
+                IsWHQL           = $false
+            }
+        }
+    } elseif ($vendor -eq "NVIDIA") {
+        try {
+            $nvPnpId = "2684_10DE_889C_1043_1"
+            if ($CurrentDetails.PnpDeviceId -match "PCI\\VEN_10DE&DEV_([0-9A-Fa-f]{4})(&SUBSYS_([0-9A-Fa-f]{8}))?") {
+                $dev = $matches[1]
+                $subsys = if ($matches[3]) {
+                    "$($matches[3].Substring(0,4))_$($matches[3].Substring(4,4))_1"
+                } else { "889C_1043_1" }
+                $nvPnpId = "${dev}_10DE_${subsys}"
+            }
+
+            $payload = @{
+                dIDa  = @($nvPnpId)
+                osC   = "10.0"
+                osB   = "22631"
+                is6   = "1"
+                lg    = "1033"
+                iLp   = "0"
+                prvMd = "0"
+                upCRD = "0"
+            } | ConvertTo-Json -Compress
+
+            $encoded = [System.Uri]::EscapeDataString($payload)
+            $url = "https://gfwsl.geforce.com/nvidia_web_services/controller.gfeclientcontent.NG.php/com.nvidia.services.GFEClientContent_NG.getDispDrvrByDevid/$encoded"
+            $res = Invoke-RestMethod -Uri $url -TimeoutSec 6 -ErrorAction Stop
+
+            $drvr = $res.DriverAttributes | Select-Object -First 1
+            if ($drvr) {
+                $latestVer = "$($drvr.Version)"
+                $dlUrl = if ($drvr.DownloadURLAdmin) { $drvr.DownloadURLAdmin } else { $drvr.DownloadURL }
+                $relNotes = if ($drvr.DetailsURL) { $drvr.DetailsURL } else { "https://www.nvidia.com/drivers" }
+                $relDate = if ($drvr.ReleaseDateTime) { "$($drvr.ReleaseDateTime)".Split(" ")[0] } else { "" }
+
+                $installedNum = $installedDisplay -replace "[^\d\.]", ""
+                $hasUpdate = $false
+                try {
+                    $hasUpdate = ([version]$latestVer -gt [version]$installedNum)
+                } catch {
+                    $hasUpdate = ($latestVer -ne $installedNum)
+                }
+
+                return [PSCustomObject]@{
+                    Vendor            = "NVIDIA"
+                    GpuName           = $CurrentDetails.GpuName
+                    InstalledVersion  = $installedDisplay
+                    InstalledDriver   = $installedVer
+                    LatestVersion     = "Game Ready $latestVer"
+                    LatestDriver      = $latestVer
+                    ReleaseDate       = $relDate
+                    HasUpdate         = $hasUpdate
+                    DownloadUrl       = $dlUrl
+                    DetailsUrl        = $relNotes
+                    Status            = if ($hasUpdate) { "Update Available" } else { "Up to Date" }
+                    IsWHQL            = [bool]$drvr.IsWHQL
+                }
+            }
+        } catch {
+            return [PSCustomObject]@{
+                Vendor           = "NVIDIA"
+                GpuName          = $CurrentDetails.GpuName
+                InstalledVersion = $installedDisplay
+                InstalledDriver  = $installedVer
+                LatestVersion    = "Unknown"
+                HasUpdate        = $false
+                DownloadUrl      = "https://www.nvidia.com/Download/index.aspx"
+                DetailsUrl       = "https://www.nvidia.com/Download/index.aspx"
+                Status           = "Check Failed (Offline/Timeout)"
+                IsWHQL           = $false
+            }
+        }
+    } elseif ($vendor -eq "Intel") {
+        return [PSCustomObject]@{
+            Vendor           = "Intel"
+            GpuName          = $CurrentDetails.GpuName
+            InstalledVersion = $installedDisplay
+            InstalledDriver  = $installedVer
+            LatestVersion    = "Intel Driver & Support Assistant"
+            HasUpdate        = $false
+            DownloadUrl      = "https://www.intel.com/content/www/us/en/support/detect.html"
+            DetailsUrl       = "https://www.intel.com/content/www/us/en/support/detect.html"
+            Status           = "Scan via Intel DSA"
+            IsWHQL           = $true
+        }
+    }
+
+    return [PSCustomObject]@{
+        Vendor           = "Generic"
+        GpuName          = $CurrentDetails.GpuName
+        InstalledVersion = $installedDisplay
+        InstalledDriver  = $installedVer
+        LatestVersion    = "N/A"
+        HasUpdate        = $false
+        DownloadUrl      = ""
+        DetailsUrl       = ""
+        Status           = "Unsupported GPU Vendor"
+        IsWHQL           = $false
+    }
 }

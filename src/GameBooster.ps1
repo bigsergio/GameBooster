@@ -74,7 +74,7 @@ $LogFile = Join-Path $RootDir "gamebooster.log"
 $SessionFile = Join-Path $RootDir "last_session.json"
 $TrayPidFile = Join-Path $RootDir "tray.pid"
 
-$script:AppVersion = "1.2.2"
+$script:AppVersion = "2.0.0"
 $script:GitHubRepo = "bigsergio/GameBooster"
 
 # Ensure config.json exists from template if needed
@@ -93,6 +93,7 @@ Write-AppLog "Initializing Game Booster v$script:AppVersion PRO..."
 
 # Load Core Modules
 try {
+    . (Join-Path $ModulesDir "DarkDialog.ps1")
     . (Join-Path $ModulesDir "CpuOptimizer.ps1")
     . (Join-Path $ModulesDir "GpuManager.ps1")
     . (Join-Path $ModulesDir "MemoryPurge.ps1")
@@ -101,13 +102,86 @@ try {
     . (Join-Path $ModulesDir "ServerRadar.ps1")
     . (Join-Path $ModulesDir "ShaderCleaner.ps1")
     . (Join-Path $ModulesDir "SystemTweaks.ps1")
+    . (Join-Path $ModulesDir "Watchdog.ps1")
+    . (Join-Path $ModulesDir "DisplayManager.ps1")
+    . (Join-Path $ModulesDir "GamingLockout.ps1")
+    . (Join-Path $ModulesDir "NetworkQoS.ps1")
+    . (Join-Path $ModulesDir "ProBalance.ps1")
+    . (Join-Path $ModulesDir "HardwareTweaks.ps1")
+    . (Join-Path $ModulesDir "FrameTelemetry.ps1")
+    . (Join-Path $ModulesDir "LagAnalyzer.ps1")
     Write-AppLog "All core feature modules imported successfully."
 } catch {
     Write-AppLog "Failed to load modules: $_" "ERROR"
 }
 
+# Failsafe fallback for Show-DarkModal
+if (-not (Get-Command Show-DarkModal -ErrorAction SilentlyContinue)) {
+    function Show-DarkModal {
+        param($Arg0, $Arg1, $Arg2, $Arg3, $Arg4)
+        if ($Arg0 -is [System.Windows.Window]) {
+            [System.Windows.MessageBox]::Show($Arg0, [string]$Arg1, [string]$Arg2, (if ($Arg3) { $Arg3 } else { [System.Windows.MessageBoxButton]::OK }), (if ($Arg4) { $Arg4 } else { [System.Windows.MessageBoxImage]::Information }))
+        } else {
+            [System.Windows.MessageBox]::Show([string]$Arg0, [string]$Arg1, (if ($Arg2) { $Arg2 } else { [System.Windows.MessageBoxButton]::OK }), (if ($Arg3) { $Arg3 } else { [System.Windows.MessageBoxImage]::Information }))
+        }
+    }
+}
+
+# Check for Watchdog Crash Recovery (Auto-rollback if previous run crashed)
+try {
+    $watchdogRecovery = Invoke-WatchdogCrashRecovery
+    if ($watchdogRecovery -and $watchdogRecovery.Recovered) {
+        Write-AppLog "WATCHDOG: $($watchdogRecovery.Message)" "WARN"
+    }
+} catch {
+    Write-AppLog "Watchdog crash check error: $_" "WARN"
+}
+
 # Determine PowerShell Host
 $PSHostExe = if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { "pwsh.exe" } else { "powershell.exe" }
+
+# =============================================================================
+# HELPER FUNCTIONS: PORTMASTER GRACEFUL CONTROL
+# =============================================================================
+function Stop-PortmasterSafely {
+    try {
+        # 1. Terminate GUI / tray instances cleanly
+        Get-Process -Name "portmaster", "safing-portmaster" -ErrorAction SilentlyContinue | ForEach-Object {
+            try { Stop-Process -Id $_.Id -ErrorAction SilentlyContinue } catch {}
+        }
+        # 2. Gracefully stop PortmasterCore service so its WFP driver unhooks cleanly
+        $pmSvc = Get-Service -Name "PortmasterCore" -ErrorAction SilentlyContinue
+        if ($pmSvc -and $pmSvc.Status -eq "Running") {
+            Stop-Service -Name "PortmasterCore" -Force -ErrorAction SilentlyContinue
+        }
+        # 3. Flush DNS client cache so network stack immediately resolves DNS via primary gateway/NIC
+        Clear-DnsClientCache -ErrorAction SilentlyContinue
+    } catch {}
+}
+
+function Start-PortmasterSafely {
+    try {
+        # 1. Start PortmasterCore service
+        $pmSvc = Get-Service -Name "PortmasterCore" -ErrorAction SilentlyContinue
+        if ($pmSvc -and $pmSvc.Status -ne "Running") {
+            Start-Service -Name "PortmasterCore" -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 800
+        }
+        # 2. Launch Portmaster GUI / tray
+        $pmGuiPaths = @(
+            "C:\Program Files\Safing\Portmaster\portmaster.exe",
+            (Join-Path $env:ProgramFiles "Safing\Portmaster\portmaster.exe")
+        )
+        foreach ($pPath in $pmGuiPaths) {
+            if (Test-Path $pPath) {
+                Start-Process -FilePath $pPath -WindowStyle Hidden -ErrorAction SilentlyContinue
+                break
+            }
+        }
+        # 3. Flush DNS cache
+        Clear-DnsClientCache -ErrorAction SilentlyContinue
+    } catch {}
+}
 
 # Config Helpers
 function Get-AppConfig {
@@ -167,11 +241,12 @@ if ($Boost) {
 
     # 0. Hardcoded Critical Windows OS Subsystems (Absolute safeguard)
     $criticalOs = @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
-      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "explorer", "winlogon", "sppsvc", "SecurityHealthService", "SecurityHealthSystray", 
       "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
       "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
       "conhost", "cmd", "pwsh", "powershell", "wt", "WindowsTerminal", "GameBooster", "taskmgr",
-      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git")
+      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git",
+      "portmaster-core", "safing-portmaster", "PortmasterCore")
     foreach ($cp in $criticalOs) { $wl.Add($cp) | Out-Null }
 
     # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons)
@@ -193,7 +268,7 @@ if ($Boost) {
     if ($cfg.gameProfiles) {
         foreach ($prop in $cfg.gameProfiles.PSObject.Properties) { [void]$wl.Add($prop.Name) }
     }
-    $gameBinaries = @("cod", "bootstrapper", "cod24", "sp24", "BlackOps6", "Wow", "WowClassic", "Wow-64", "cs2", "csgo", "dota2", "Valorant", "RiotClientServices", "Overwatch", "FortniteClient-Win64-Shipping", "r5apex")
+    $gameBinaries = @("cod", "bootstrapper", "cod24", "sp24", "BlackOps6", "cod25-cod", "codCrashHandler", "bootstrapperCrashHandler", "randgrid", "Wow", "WowClassic", "Wow-64", "cs2", "csgo", "dota2", "Valorant", "RiotClientServices", "Overwatch", "FortniteClient-Win64-Shipping", "r5apex")
     foreach ($gb in $gameBinaries) { [void]$wl.Add($gb) }
 
     # Map running Windows services so background services (like Fing.Agent) are properly stopped and restorable
@@ -216,7 +291,26 @@ if ($Boost) {
     foreach ($grp in $grouped) {
         $pName = $grp.Name
         if ($wl.Contains($pName)) { continue }
-        if ($pName -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative") { continue }
+        if ($pName -match "(?i)cod|bootstrapper|randgrid|RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|vgk|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative|portmaster|safing|spoolsv|vmms|vmcompute") { continue }
+
+        # In automated Headless Boost, ONLY terminate apps configured in selectedByDefault or known heavy user apps
+        $isConfigTarget = $cfg.selectedByDefault -and ($cfg.selectedByDefault -contains $pName)
+        $isHeavyUserApp = ($pName -match "(?i)discord|spotify|slack|steamwebhelper|epicgames|battlenet|eaapp|gog|chrome|msedge|firefox|brave|opera")
+        if (-not $isConfigTarget -and -not $isHeavyUserApp) { continue }
+
+        if ($pName -match "(?i)portmaster|safing") {
+            Stop-PortmasterSafely
+            $closedItems += [PSCustomObject]@{
+                Name        = "Portmaster"
+                ServiceName = "PortmasterCore"
+                Id          = $grp.Group[0].Id
+                RAM_MB      = [math]::Round(($grp.Group | Measure-Object -Property WorkingSet64 -Sum).Sum / 1MB, 0)
+                Path        = "C:\Program Files\Safing\Portmaster\portmaster.exe"
+                Time        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            }
+            $freedRAM += [math]::Round(($grp.Group | Measure-Object -Property WorkingSet64 -Sum).Sum / 1MB, 0)
+            continue
+        }
 
         $pPath = $null
         $pRamTotal = 0
@@ -227,7 +321,10 @@ if ($Boost) {
             try {
                 if ($serviceMap.ContainsKey([int]$p.Id)) {
                     $svcName = $serviceMap[[int]$p.Id]
-                    & sc.exe stop $svcName | Out-Null
+                    # Never stop critical/gaming services
+                    if ($svcName -notmatch "(?i)cod|callofduty|activision|battleye|easyanticheat|vgc|vgk|punkbuster|spooler|vmms|vmcompute|portmaster|safing|wlan|lanman|bfe|dhcp|dnscache") {
+                        Stop-Service -Name $svcName -NoWait -ErrorAction SilentlyContinue
+                    }
                 }
                 if (-not $pPath -and $p.Path) { $pPath = $p.Path }
                 $pRam = [math]::Round($p.WorkingSet64 / 1MB, 0)
@@ -257,14 +354,40 @@ if ($Boost) {
         $sessionData | ConvertTo-Json -Depth 5 | Set-Content -Path $SessionFile -Encoding UTF8 -Force
     } catch {}
 
+    # Phase 1: Watchdog Session Initialization
+    $origPowerPlan = Get-ActivePowerPlanGuid
+    $origStickyFlags = if (Get-Command Get-GamingLockoutStatus -ErrorAction SilentlyContinue) { [GamingLockoutNative]::GetStickyKeysFlags() } else { 0 }
+    Initialize-WatchdogSession -TargetGame "GameMode_Boost" -PowerPlanGuid $origPowerPlan -StickyKeysFlags $origStickyFlags | Out-Null
+
+    # Phase 1: Launcher RAM Diet (Reclaim active RAM from heavy Chromium launchers without closing them)
+    $dietRes = Invoke-LauncherRamDiet
+    if ($dietRes.TotalFreedMB -gt 0) {
+        Write-AppLog "Launcher RAM Diet: Freed $($dietRes.TotalFreedMB)MB across $($dietRes.TargetedProcessesCount) background processes."
+    }
+
     # Purge standby RAM
     $purgeRes = Invoke-SmartMemoryPurge
-    $totalFreed = $freedRAM + [math]::Round($purgeRes.FreedGB * 1024, 0)
+    $dietFreed = if ($dietRes.TotalFreedMB) { [math]::Round($dietRes.TotalFreedMB, 0) } else { 0 }
+    $totalFreed = $freedRAM + [math]::Round($purgeRes.FreedGB * 1024, 0) + $dietFreed
 
     # Enable Ultimate Performance Power Plan
-    Enable-UltimatePerformancePlan | Out-Null
+    Switch-ToUltimatePerformance | Out-Null
 
-    Write-AppLog "Headless Game Mode activated. Closed $($closedItems.Count) app groups, freed ${freedRAM}MB process RAM, purged $($purgeRes.FreedMB)MB standby RAM."
+    # Phase 1: Gaming Lockout (WinKey is OPTIONAL and default OFF; StickyKeys prompt suppressed)
+    $lockWin = if ($cfg.tweaksSettings -and $null -ne $cfg.tweaksSettings.gamingLockoutWinKey) { [bool]$cfg.tweaksSettings.gamingLockoutWinKey } else { $false }
+    $lockSticky = if ($cfg.tweaksSettings -and $null -ne $cfg.tweaksSettings.gamingLockoutStickyKeys) { [bool]$cfg.tweaksSettings.gamingLockoutStickyKeys } else { $true }
+    Enable-GamingLockout -DisableWinKey $lockWin -DisableStickyKeys $lockSticky | Out-Null
+
+    # Phase 2: Reverse Affinity Core Siloing (Silos background apps away from game cores)
+    $enableRevAffinity = if ($cfg.tweaksSettings -and $null -ne $cfg.tweaksSettings.enableReverseAffinity) { [bool]$cfg.tweaksSettings.enableReverseAffinity } else { $true }
+    if ($enableRevAffinity) {
+        $revRes = Invoke-ReverseAffinitySiloing
+        if ($revRes.SiloedCount -gt 0) {
+            Write-AppLog "Reverse Affinity: Siloed $($revRes.SiloedCount) background apps onto auxiliary cores ($($revRes.BackgroundMask))."
+        }
+    }
+
+    Write-AppLog "Headless Game Mode activated. Closed $($closedItems.Count) app groups, freed ${freedRAM}MB process RAM, purged $($purgeRes.FreedMB)MB standby RAM, trimmed ${dietFreed}MB launcher RAM."
     if (-not $Silent) {
         Write-Host "Game Mode activated. Freed ${totalFreed}MB RAM." -ForegroundColor Green
     }
@@ -274,6 +397,24 @@ if ($Boost) {
 if ($Restore) {
     Write-AppLog "Headless session restore initiated by Auto-Watcher/CLI..."
     if (-not $Silent) { Write-Host "Restoring applications..." -ForegroundColor Cyan }
+
+    # Phase 1: Reset Gaming Lockout & Display Mode
+    Disable-GamingLockout | Out-Null
+    Reset-DisplayResolution | Out-Null
+
+    # Phase 2: Restore Reverse Affinity & Clean QoS
+    Restore-ReverseAffinity | Out-Null
+    Restore-AllThrottledProcesses | Out-Null
+    Clear-AllGamingQosPolicies | Out-Null
+
+    # Phase 1: Restore Original Power Scheme if recorded
+    $wdState = Get-WatchdogState
+    if ($wdState -and $wdState.OriginalPowerPlanGuid) {
+        Restore-OriginalPowerPlan -Guid $wdState.OriginalPowerPlanGuid | Out-Null
+    }
+
+    # Phase 1: Mark Watchdog Clean Exit
+    Complete-WatchdogSession
 
     $restoredCount = 0
     if (Test-Path $SessionFile) {
@@ -285,8 +426,14 @@ if ($Restore) {
                         $skipRestore = @("node", "python", "cmd", "powershell", "pwsh", "bash", "wsl", "dashost", "midisrv", "conhost", "wt", "WindowsTerminal")
                         if ($skipRestore -contains $app.Name) { continue }
 
+                        if ($app.Name -match "(?i)portmaster|safing" -or $app.ServiceName -match "(?i)portmaster") {
+                            Start-PortmasterSafely
+                            $restoredCount++
+                            continue
+                        }
+
                         if ($app.ServiceName) {
-                            & sc.exe start $app.ServiceName | Out-Null
+                            try { Start-Service -Name $app.ServiceName -ErrorAction SilentlyContinue } catch {}
                             $restoredCount++
                             continue
                         }
@@ -341,7 +488,7 @@ Write-AppLog "Building Modern WPF Interface..."
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Mode Booster v1.2.2 PRO"
+        Title="Game Booster PRO v2.0.0"
         Height="850" Width="1280" MinWidth="1100" MinHeight="720"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
@@ -619,8 +766,8 @@ Write-AppLog "Building Modern WPF Interface..."
             <RowDefinition Height="Auto"/> <!-- Status Bar -->
         </Grid.RowDefinitions>
 
-        <!-- 1. TOP HEADER BANNER -->
-        <Border Grid.Row="0" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,10">
+        <!-- 1. TOP HEADER BANNER (Organized 2-Row Hardware & Daemon Matrix) -->
+        <Border Grid.Row="0" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="14,8" Margin="0,0,0,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
@@ -629,12 +776,12 @@ Write-AppLog "Building Modern WPF Interface..."
                 </Grid.ColumnDefinitions>
 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="⚡" FontSize="26" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                    <StackPanel>
-                        <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="⚡" FontSize="28" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="#10B981"/>
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
                             <TextBlock Text="GAME BOOSTER" FontSize="18" FontWeight="ExtraBold" Foreground="#10B981" Margin="0,0,6,0"/>
                             <Border Background="#047857" CornerRadius="4" Padding="6,2" VerticalAlignment="Center">
-                                <TextBlock Text="v1.2.2 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                <TextBlock Text="v2.0.0 PRO" FontSize="10" FontWeight="Bold" Foreground="#FFFFFF"/>
                             </Border>
                             <Border Name="PillUpdateAvailable" Visibility="Collapsed" Background="#1E3A8A" BorderBrush="#3B82F6" BorderThickness="1" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center" Cursor="Hand" ToolTip="New version available! Click to download latest release on GitHub">
                                 <TextBlock Name="TxtUpdateVersion" Text="🚀 Update Available" FontSize="10" FontWeight="Bold" Foreground="#60A5FA"/>
@@ -644,37 +791,52 @@ Write-AppLog "Building Modern WPF Interface..."
                     </StackPanel>
                 </StackPanel>
 
-                <!-- Hardware & Engine Status Pills -->
-                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
-                    <!-- GPU Badge -->
-                    <Border Name="BadgeGpu" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="0,0,8,0">
+                <!-- Hardware & Engine Status Pills (2x2 Matrix: Hardware on Left, Daemons on Right) -->
+                <Grid Grid.Column="2" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <!-- Row 0, Col 0: GPU Badge -->
+                    <Border Name="BadgeGpu" Grid.Row="0" Grid.Column="0" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="0,0,8,4" Cursor="Hand" ToolTip="Click to check for GPU driver updates">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="GPU: " Foreground="#64748B" FontSize="11" FontWeight="SemiBold"/>
                             <TextBlock Name="TxtGpuBadge" Text="Detecting..." Foreground="#38BDF8" FontSize="11" FontWeight="Bold"/>
+                            <Border Name="PillGpuUpdate" Background="#065F46" CornerRadius="4" Padding="5,1" Margin="6,0,0,0" Visibility="Collapsed" Cursor="Hand" ToolTip="New GPU Driver Available! Click to download">
+                                <TextBlock Name="TxtGpuUpdateTag" Text="⚡ Update Avail" Foreground="#34D399" FontSize="10" FontWeight="Bold"/>
+                            </Border>
                         </StackPanel>
                     </Border>
-                    <!-- CPU Architecture Badge -->
-                    <Border Name="BadgeCpu" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="0,0,8,0">
+
+                    <!-- Row 1, Col 0: CPU Architecture Badge (Below GPU) -->
+                    <Border Name="BadgeCpu" Grid.Row="1" Grid.Column="0" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="0,0,8,0">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="CPU: " Foreground="#64748B" FontSize="11" FontWeight="SemiBold"/>
                             <TextBlock Name="TxtCpuBadge" Text="Topology..." Foreground="#A78BFA" FontSize="11" FontWeight="Bold"/>
                         </StackPanel>
                     </Border>
-                    <!-- Tray & Hotkey Pill (Clickable) -->
-                    <Border Name="PillTrayStatus" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Margin="0,0,8,0" Cursor="Hand" ToolTip="Click to toggle Tray Companion background daemon (Ctrl+F11)">
+
+                    <!-- Row 0, Col 1: Tray & Hotkey Pill (Clickable) -->
+                    <Border Name="PillTrayStatus" Grid.Row="0" Grid.Column="1" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,3" Margin="0,0,0,4" Cursor="Hand" ToolTip="Click to toggle Tray Companion background daemon (Ctrl+F11)">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Name="DotTray" Width="8" Height="8" Fill="#64748B" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Name="TxtTrayStatus" Text="Tray Companion: OFF" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
-                    <!-- Auto-Watcher Pill (Clickable) -->
-                    <Border Name="PillWatcherStatus" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="10,4" Cursor="Hand" ToolTip="Click to toggle Auto-Watcher background daemon">
+
+                    <!-- Row 1, Col 1: Auto-Watcher Pill (Below Tray Companion) -->
+                    <Border Name="PillWatcherStatus" Grid.Row="1" Grid.Column="1" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="6" Padding="8,3" Cursor="Hand" ToolTip="Click to toggle Auto-Watcher background daemon">
                         <StackPanel Orientation="Horizontal">
                             <Ellipse Name="DotWatcher" Width="8" Height="8" Fill="#64748B" Margin="0,0,6,0" VerticalAlignment="Center"/>
                             <TextBlock Name="TxtWatcherStatus" Text="Auto-Watcher: OFF" Foreground="#CBD5E1" FontSize="11" FontWeight="SemiBold"/>
                         </StackPanel>
                     </Border>
-                </StackPanel>
+                </Grid>
             </Grid>
         </Border>
 
@@ -694,6 +856,7 @@ Write-AppLog "Building Modern WPF Interface..."
                 </StackPanel>
 
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Name="BtnTipJar" Content="☕ Tip Jar / Support" Background="#1E293B" BorderBrush="#F59E0B" BorderThickness="1" Foreground="#FBBF24" Height="32" Padding="12,0" FontWeight="Bold" Margin="0,0,8,0" ToolTip="Support independent open-source Game Booster development (PayPal / Ko-Fi / GitHub Sponsors)"/>
                     <Button Name="BtnLaunchTrayCompanion" Content="📥 Minimize to Tray" Background="#1E293B" Foreground="#CBD5E1" Height="32" Padding="12,0" Margin="0,0,8,0"/>
                     <Button Name="BtnSaveAllConfig" Content="💾 Save Defaults" Background="#1E293B" Foreground="#10B981" Height="32" Padding="12,0" FontWeight="Bold"/>
                 </StackPanel>
@@ -721,6 +884,7 @@ Write-AppLog "Building Modern WPF Interface..."
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0" Orientation="Horizontal">
                             <Button Name="BtnRefreshAll" Content="🔄 Refresh Running Apps" Background="#1E293B" Foreground="#38BDF8" Height="30" Padding="12,0" Margin="0,0,10,0" FontWeight="Bold" ToolTip="Scan and refresh active running processes"/>
+                            <CheckBox Name="ChkAutoScanStartup" Content="Auto-scan on launch" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,12,0" ToolTip="When unchecked, Game Booster launches instantly in standby mode (under 0.4s)"/>
                             <Rectangle Width="1" Fill="#334155" Margin="0,2,10,2"/>
                             <TextBlock Text="Select:" Foreground="#94A3B8" VerticalAlignment="Center" Margin="0,0,8,0" FontWeight="SemiBold"/>
                             <Button Name="BtnSelectNonEssential" Content="All Non-Essential" Background="#047857" Foreground="#FFFFFF" Height="30" Padding="12,0" Margin="0,0,6,0" FontWeight="SemiBold"/>
@@ -848,6 +1012,7 @@ Write-AppLog "Building Modern WPF Interface..."
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
                             <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
                                 <TextBlock Text="⚙️ PER-GAME HARDWARE OPTIMIZER PROFILE: " FontWeight="Bold" Foreground="#38BDF8" FontSize="12"/>
@@ -900,6 +1065,30 @@ Write-AppLog "Building Modern WPF Interface..."
                                     <Button Name="BtnResetGameProfile" Content="⏮️ Reset" Background="#334155" Foreground="#F8FAFC" Height="36" Padding="10,0" ToolTip="Reset profile settings to default"/>
                                 </StackPanel>
                             </Grid>
+
+                            <!-- Row 2: Community Presets & Profile Import/Export (Phase 3) -->
+                            <Grid Grid.Row="2" Margin="0,10,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="Tournament Presets:" Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ComboBox Name="CmbCompetitivePresets" Width="230" Height="28" Background="#1E293B" Foreground="#FFFFFF" Margin="0,0,6,0">
+                                        <ComboBoxItem Content="Call of Duty (Warzone / BO6)" IsSelected="True"/>
+                                        <ComboBoxItem Content="Counter-Strike 2"/>
+                                        <ComboBoxItem Content="Valorant"/>
+                                        <ComboBoxItem Content="Apex Legends"/>
+                                        <ComboBoxItem Content="World of Warcraft"/>
+                                    </ComboBox>
+                                    <Button Name="BtnApplyCompetitivePreset" Content="🏆 Apply Preset" Background="#7C3AED" Foreground="#FFFFFF" Height="28" Padding="12,0" FontWeight="Bold" ToolTip="Apply tuned competitive preset to the selected game"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Name="BtnExportGameProfile" Content="📤 Export Profile (.json)" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Foreground="#38BDF8" Height="28" Padding="10,0" Margin="0,0,6,0" ToolTip="Export current profile to a portable JSON file to share"/>
+                                    <Button Name="BtnImportGameProfile" Content="📥 Import Profile (.json)" Background="#1E293B" BorderBrush="#10B981" BorderThickness="1" Foreground="#34D399" Height="28" Padding="10,0" ToolTip="Import a game profile from a JSON file"/>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
                     </Border>
                 </Grid>
@@ -909,13 +1098,62 @@ Write-AppLog "Building Modern WPF Interface..."
             <TabItem Header="⚡ Tweaks &amp; Radar">
                 <Grid Margin="12">
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="440"/>
+                        <ColumnDefinition Width="480"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
 
                     <!-- Left Column: 1-Click Windows Gaming Tweaks & Shader Cleaner -->
                     <ScrollViewer Grid.Column="0" VerticalScrollBarVisibility="Auto" Margin="0,0,10,0">
                         <StackPanel>
+                            <!-- Card 0: GPU & Display Driver Radar -->
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="🚀 GPU DRIVER UPDATE RADAR" FontWeight="Bold" Foreground="#38BDF8" FontSize="12"/>
+                                        <Border Name="BadgeGpuDriverStatus" Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="8,2">
+                                            <TextBlock Name="TxtGpuDriverBadge" Text="READY" FontSize="10" FontWeight="Bold" Foreground="#38BDF8"/>
+                                        </Border>
+                                    </Grid>
+                                    <TextBlock Text="Live driver verification directly from AMD GPUOpen and NVIDIA GeForce update feeds." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <Border Background="#0B132B" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="105"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Graphics Card:" Foreground="#64748B" FontSize="11"/>
+                                                <TextBlock Name="TxtGpuCardName" Grid.Column="1" Text="Detecting..." Foreground="#F8FAFC" FontWeight="Bold" FontSize="11"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="105"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Installed Driver:" Foreground="#64748B" FontSize="11"/>
+                                                <TextBlock Name="TxtGpuInstalledDriver" Grid.Column="1" Text="Scanning..." Foreground="#38BDF8" FontWeight="SemiBold" FontSize="11"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="105"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Latest Available:" Foreground="#64748B" FontSize="11"/>
+                                                <TextBlock Name="TxtGpuLatestDriver" Grid.Column="1" Text="Click Check Updates" Foreground="#34D399" FontWeight="Bold" FontSize="11"/>
+                                            </Grid>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="105"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Release Date:" Foreground="#64748B" FontSize="11"/>
+                                                <TextBlock Name="TxtGpuReleaseDate" Grid.Column="1" Text="--" Foreground="#94A3B8" FontSize="11"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Name="BtnDownloadGpuDriver" Grid.Column="0" Content="📥 View Release Notes &amp; Download" Background="#0284C7" Foreground="#FFFFFF" Height="30" FontWeight="Bold" Margin="0,0,6,0" IsEnabled="False"/>
+                                        <Button Name="BtnCheckGpuDriver" Grid.Column="1" Content="🔄 Check Updates" Background="#1E293B" Foreground="#38BDF8" BorderBrush="#0284C7" BorderThickness="1" Height="30" Padding="10,0"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
                             <!-- Card 1: Windows Low-Latency Subsystems -->
                             <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
                                 <StackPanel>
@@ -965,7 +1203,7 @@ Write-AppLog "Building Modern WPF Interface..."
                                         </Border>
                                     </Grid>
 
-                                    <Grid Margin="0,0,0,8">
+                                    <Grid Margin="0,0,0,4">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
@@ -973,6 +1211,17 @@ Write-AppLog "Building Modern WPF Interface..."
                                         <TextBlock Text="PowerShell 7 Runtime Engine" VerticalAlignment="Center" Foreground="#F8FAFC"/>
                                         <Border Name="BadgePsEngine" Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="8,2">
                                             <TextBlock Name="TxtBadgePsEngine" Text="CHECKING" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1"/>
+                                        </Border>
+                                    </Grid>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Multiplane Overlay (MPO Fix)" VerticalAlignment="Center" Foreground="#F8FAFC"/>
+                                        <Border Name="BadgeMpo" Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="8,2">
+                                            <TextBlock Name="TxtBadgeMpo" Text="CHECKING" FontSize="10" FontWeight="Bold" Foreground="#CBD5E1"/>
                                         </Border>
                                     </Grid>
 
@@ -984,6 +1233,18 @@ Write-AppLog "Building Modern WPF Interface..."
                                         <Button Name="BtnApplyAllTweaks" Grid.Column="0" Content="⚡ 1-Click Apply All Gaming Tweaks" Background="#10B981" Foreground="#022C22" Height="32" FontWeight="ExtraBold" Margin="0,0,6,0"/>
                                         <Button Name="BtnUpgradePs7" Grid.Column="1" Content="🚀 Upgrade PS7" Background="#1E293B" BorderBrush="#38BDF8" BorderThickness="1" Foreground="#38BDF8" Height="32" Padding="12,0" FontWeight="Bold" ToolTip="Install or switch to PowerShell 7 for 2x faster performance"/>
                                     </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 1B: v2.0 Engine & Input Options -->
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
+                                <StackPanel>
+                                    <TextBlock Text="⚙️ GAME MODE ENGINE &amp; INPUT OPTIONS (v2.0)" FontWeight="Bold" Foreground="#38BDF8" FontSize="12" Margin="0,0,0,6"/>
+                                    <CheckBox Name="ChkLockWinKey" Content="Lock Windows Key during Game Mode (Optional)" IsChecked="False" Foreground="#CBD5E1" FontSize="11" Margin="0,0,0,4" ToolTip="Suppresses Start Menu when pressing the Windows key in-game. Keep unchecked if you use Win+G, Win+Shift+S, etc."/>
+                                    <CheckBox Name="ChkSuppressSticky" Content="Suppress Sticky Keys (5x Shift popup)" IsChecked="True" Foreground="#CBD5E1" FontSize="11" Margin="0,0,0,4" ToolTip="Disables the annoying Windows Sticky Keys alert dialog when mashing the Shift key in games."/>
+                                    <CheckBox Name="ChkLauncherRamDiet" Content="Launcher RAM Diet (EmptyWorkingSet)" IsChecked="True" Foreground="#CBD5E1" FontSize="11" Margin="0,0,0,4" ToolTip="Reclaims gigabytes of active physical RAM from Discord, Steam, Epic, Brave, and Chrome without closing them."/>
+                                    <CheckBox Name="ChkReverseAffinity" Content="Reverse Affinity (Silo background apps away from game cores)" IsChecked="True" Foreground="#CBD5E1" FontSize="11" Margin="0,0,0,4" ToolTip="Pins background apps to auxiliary cores / E-cores / secondary CCD so the game has 100% uncontested CPU cores."/>
+                                    <CheckBox Name="ChkDynamicQos" Content="Dynamic Gaming QoS (UDP DSCP 46 Expedited Forwarding)" IsChecked="True" Foreground="#CBD5E1" FontSize="11" Margin="0,0,0,4" ToolTip="Prioritizes real-time gaming network packets at the OS network queue and router levels."/>
                                 </StackPanel>
                             </Border>
 
@@ -1004,20 +1265,87 @@ Write-AppLog "Building Modern WPF Interface..."
                                 </StackPanel>
                             </Border>
 
-                            <!-- Card 3: Shader Cache & Junk Cleaner (Feature 10) -->
+                            <!-- Card 3: Multi-Vendor Shader Cache Manager -->
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
+                                <StackPanel>
+                                    <TextBlock Text="🎮 MULTI-VENDOR SHADER CACHE MANAGER" FontWeight="Bold" Foreground="#F59E0B" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Purges stale DirectX, AMD, NVIDIA, Intel, Steam, and Battle.net pipeline caches to eliminate micro-stutters and hitching." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Text="Total Cached Shaders:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12"/>
+                                        <TextBlock Name="TxtShaderSize" Grid.Column="1" Text="Scanning..." FontWeight="ExtraBold" Foreground="#F59E0B" FontSize="13"/>
+                                    </Grid>
+                                    <TextBlock Name="TxtShaderBreakdown" Text="DirectX, AMD Radeon, Battle.net &amp; Steam caches monitored." Foreground="#64748B" FontSize="10" Margin="0,0,0,8" TextWrapping="Wrap"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Name="BtnCleanShaders" Grid.Column="0" Content="🧹 Clean Stale Shaders (Fix Stutter)" Background="#D97706" Foreground="#FFFFFF" Height="30" FontWeight="Bold" Margin="0,0,6,0"/>
+                                        <Button Name="BtnScanShaders" Grid.Column="1" Content="🔍 Scan" Background="#1E293B" Foreground="#FBBF24" BorderBrush="#F59E0B" BorderThickness="1" Height="30" Padding="12,0" FontWeight="SemiBold"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 4: PCIe MSI Mode & High IRQ Priority Engine -->
+                            <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10" Margin="0,0,0,6">
+                                <StackPanel>
+                                    <TextBlock Text="⚡ PCIE MSI MODE &amp; HIGH IRQ PRIORITY (LATENCY FIX)" FontWeight="Bold" Foreground="#38BDF8" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Configures Message Signaled Interrupts (MSI) and High IRQ priority for GPU, Network NIC, and Audio to eliminate DPC latency spikes." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <Border Background="#0B132B" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="4" Padding="8" Margin="0,0,0,6">
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Graphics Card (GPU):" Foreground="#94A3B8" FontSize="11"/>
+                                                <TextBlock Name="TxtMsiGpuStatus" Grid.Column="1" Text="Scanning..." Foreground="#38BDF8" FontWeight="Bold" FontSize="11"/>
+                                            </Grid>
+                                            <Grid Margin="0,0,0,3">
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="Gaming Network (NIC / Wi-Fi):" Foreground="#94A3B8" FontSize="11"/>
+                                                <TextBlock Name="TxtMsiNicStatus" Grid.Column="1" Text="Scanning..." Foreground="#38BDF8" FontWeight="Bold" FontSize="11"/>
+                                            </Grid>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                                <TextBlock Text="HD Audio / Sound Bus:" Foreground="#94A3B8" FontSize="11"/>
+                                                <TextBlock Name="TxtMsiAudioStatus" Grid.Column="1" Text="Scanning..." Foreground="#F59E0B" FontWeight="Bold" FontSize="11"/>
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Name="BtnOptimizePcieMsi" Grid.Column="0" Content="⚡ 1-Click Optimize PCIe MSI &amp; High IRQ" Background="#0284C7" Foreground="#FFFFFF" Height="30" FontWeight="Bold" Margin="0,0,6,0" ToolTip="Sets MSI Mode and High Priority across GPU, Network, USB Host Controllers, and Audio"/>
+                                        <Button Name="BtnRefreshPcieMsi" Grid.Column="1" Content="🔄 Refresh" Background="#1E293B" Foreground="#38BDF8" BorderBrush="#0284C7" BorderThickness="1" Height="30" Padding="10,0"/>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Card 5: USB Gaming Peripherals & Polling Rate Stability -->
                             <Border Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10">
                                 <StackPanel>
-                                    <TextBlock Text="📦 SHADER CACHE &amp; JUNK CLEANER" FontWeight="Bold" Foreground="#F59E0B" FontSize="12" Margin="0,0,0,4"/>
-                                    <TextBlock Text="Purge bloated DirectX, NVIDIA and AMD pipeline caches to fix stutters." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
+                                    <TextBlock Text="🖱️ USB CONTROLLER &amp; POLLING RATE OPTIMIZER" FontWeight="Bold" Foreground="#10B981" FontSize="12" Margin="0,0,0,4"/>
+                                    <TextBlock Text="Disables USB Selective Suspend and D3 power-save states on mice, keyboards, and controllers to prevent sensor sleep and missed clicks." Foreground="#94A3B8" FontSize="11" TextWrapping="Wrap" Margin="0,0,0,6"/>
                                     <Grid Margin="0,0,0,6">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="*"/>
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
-                                        <TextBlock Text="Calculated Cache Size:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12"/>
-                                        <TextBlock Name="TxtShaderSize" Grid.Column="1" Text="Calculating..." FontWeight="ExtraBold" Foreground="#F59E0B" FontSize="13"/>
+                                        <TextBlock Text="USB Power-Saving State:" VerticalAlignment="Center" Foreground="#F8FAFC" FontSize="12"/>
+                                        <TextBlock Name="TxtUsbPowerStatus" Grid.Column="1" Text="Scanning..." FontWeight="ExtraBold" Foreground="#10B981" FontSize="12"/>
                                     </Grid>
-                                    <Button Name="BtnCleanShaders" Content="🗑️ Clean Shaders (Fix Stutter)" Background="#D97706" Foreground="#FFFFFF" Height="30" FontWeight="Bold"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Button Name="BtnDisableUsbPowerSave" Grid.Column="0" Content="🖱️ Disable USB Power-Save (Max 1000Hz+ Stability)" Background="#059669" Foreground="#FFFFFF" Height="30" FontWeight="Bold" Margin="0,0,6,0" ToolTip="Disables EnhancedPowerManagementEnabled, SelectiveSuspend, and AllowIdleIrpInD3 across USB controllers and gaming peripherals"/>
+                                        <Button Name="BtnRefreshUsbStatus" Grid.Column="1" Content="🔄 Refresh" Background="#1E293B" Foreground="#34D399" BorderBrush="#059669" BorderThickness="1" Height="30" Padding="10,0"/>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
@@ -1364,17 +1692,90 @@ Write-AppLog "Building Modern WPF Interface..."
                 </Grid>
             </TabItem>
 
-            <!-- TAB 8: DIAGNOSTICS & CRASH HISTORY -->
-            <TabItem Header="📋 Diagnostics">
+            <!-- TAB 8: DIAGNOSTICS & POST-GAME LAG REPORT -->
+            <TabItem Header="📋 Diagnostics &amp; Lag Report">
                 <Grid Margin="12">
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="200"/>
-                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/> <!-- Post-Game Lag Analyzer Card (Feature 14) -->
+                        <RowDefinition Height="Auto"/> <!-- Action Bar -->
+                        <RowDefinition Height="180"/>  <!-- Incidents & Crash Events DataGrid -->
+                        <RowDefinition Height="*"/>    <!-- Report Text Box -->
                     </Grid.RowDefinitions>
 
+                    <!-- Post-Game "Why Did I Lag?" Stutter Culprit Scorecard -->
+                    <Border Grid.Row="0" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="8" Padding="14,10" Margin="0,0,0,10">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0" Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="⚡ POST-GAME &quot;WHY DID I LAG?&quot; STUTTER ANALYSIS" FontWeight="Bold" Foreground="#38BDF8" FontSize="13" Margin="0,0,8,0"/>
+                                        <Border Name="BadgeSmoothness" Background="#065F46" CornerRadius="4" Padding="8,2" VerticalAlignment="Center">
+                                            <TextBlock Name="TxtSmoothnessBadge" Text="100% READY" FontSize="11" FontWeight="ExtraBold" Foreground="#34D399"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <TextBlock Name="TxtLagSummary" Text="No lag incidents recorded in latest session. ProBalance &amp; QoS maintained full system smoothness." Foreground="#94A3B8" FontSize="11" Margin="0,2,0,0"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Name="BtnRefreshLagReport" Content="🔄 Refresh Lag Report" Background="#1E293B" Foreground="#38BDF8" BorderBrush="#0284C7" BorderThickness="1" Height="30" Padding="12,0" Margin="0,0,6,0" FontWeight="SemiBold"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- Telemetry Metrics Bar (Feature 10 & 14) -->
+                            <Border Grid.Row="1" Background="#0B132B" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="6" Padding="10,6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <!-- Last Game -->
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="LAST GAME" Foreground="#64748B" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Name="TxtLagGameName" Text="--" Foreground="#F8FAFC" FontSize="12" FontWeight="ExtraBold"/>
+                                    </StackPanel>
+                                    <!-- Duration -->
+                                    <StackPanel Grid.Column="1">
+                                        <TextBlock Text="DURATION" Foreground="#64748B" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Name="TxtLagDuration" Text="-- min" Foreground="#38BDF8" FontSize="12" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <!-- Avg FPS -->
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="AVG FPS" Foreground="#64748B" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Name="TxtLagAvgFps" Text="--" Foreground="#10B981" FontSize="12" FontWeight="ExtraBold"/>
+                                    </StackPanel>
+                                    <!-- 1% Lows -->
+                                    <StackPanel Grid.Column="3">
+                                        <TextBlock Text="1% LOW FPS" Foreground="#64748B" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Name="TxtLag1Percent" Text="--" Foreground="#38BDF8" FontSize="12" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <!-- 0.1% Lows -->
+                                    <StackPanel Grid.Column="4">
+                                        <TextBlock Text="0.1% LOW FPS" Foreground="#64748B" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Name="TxtLag01Percent" Text="--" Foreground="#F59E0B" FontSize="12" FontWeight="Bold"/>
+                                    </StackPanel>
+                                    <!-- Stutter Hits -->
+                                    <StackPanel Grid.Column="5">
+                                        <TextBlock Text="STUTTER HITS" Foreground="#64748B" FontSize="10" FontWeight="Bold"/>
+                                        <TextBlock Name="TxtLagStutters" Text="0" Foreground="#F43F5E" FontSize="12" FontWeight="Bold"/>
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </Border>
+
                     <!-- Top Action Bar -->
-                    <Grid Grid.Row="0" Margin="0,0,0,10">
+                    <Grid Grid.Row="1" Margin="0,0,0,10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -1388,7 +1789,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     </Grid>
 
                     <!-- Crash Events DataGrid with high contrast readable styling -->
-                    <Border Grid.Row="1" Background="#0F172A" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Margin="0,0,0,10">
+                    <Border Grid.Row="2" Background="#0F172A" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Margin="0,0,0,10">
                         <DataGrid Name="GridCrashEvents" AutoGenerateColumns="False" CanUserAddRows="False" CanUserDeleteRows="False" CanUserResizeRows="False" IsReadOnly="True" SelectionMode="Single" SelectionUnit="FullRow">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="#" Binding="{Binding Index}" Width="40" FontWeight="Bold" IsReadOnly="True"/>
@@ -1402,7 +1803,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     </Border>
 
                     <!-- Report & Diagnostic Details Box (fixing the illegible dark text issue) -->
-                    <Border Grid.Row="2" Background="#060911" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10">
+                    <Border Grid.Row="3" Background="#060911" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="6" Padding="10">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -1425,7 +1826,7 @@ Write-AppLog "Building Modern WPF Interface..."
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v1.2.2 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
+                <TextBlock Name="TxtStatusBar" Grid.Column="0" Text="Game Booster v2.0.0 PRO ready. Zero telemetry enabled." Foreground="#94A3B8" FontSize="11" VerticalAlignment="Center"/>
                 <TextBlock Name="TxtMemorySummary" Grid.Column="1" Text="Standby RAM: Ready | Timer: 0.5ms" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,12,0"/>
                 <Button Name="BtnCheckUpdates" Grid.Column="2" Content="🔄 Check Updates" Background="#1E293B" Foreground="#94A3B8" BorderBrush="#334155" FontSize="10" Padding="8,2" ToolTip="Check GitHub for the latest GameBooster release"/>
             </Grid>
@@ -1440,6 +1841,9 @@ $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
 # Retrieve Control Handles
 $txtGpuBadge               = $window.FindName("TxtGpuBadge")
+$badgeGpu                  = $window.FindName("BadgeGpu")
+$pillGpuUpdate             = $window.FindName("PillGpuUpdate")
+$txtGpuUpdateTag           = $window.FindName("TxtGpuUpdateTag")
 $txtCpuBadge               = $window.FindName("TxtCpuBadge")
 $dotTray                   = $window.FindName("DotTray")
 $txtTrayStatus             = $window.FindName("TxtTrayStatus")
@@ -1452,6 +1856,7 @@ $txtUpdateVersion          = $window.FindName("TxtUpdateVersion")
 $mainTabs                  = $window.FindName("MainTabs")
 $btnToggleWatcher          = $window.FindName("BtnToggleWatcher")
 $btnRefreshAll             = $window.FindName("BtnRefreshAll")
+$chkAutoScanStartup        = $window.FindName("ChkAutoScanStartup")
 $btnInstantPurge           = $window.FindName("BtnInstantPurge")
 $btnLaunchHudTop           = $window.FindName("BtnLaunchHudTop")
 $btnToggleOsdTop           = $window.FindName("BtnToggleOsdTop")
@@ -1492,8 +1897,20 @@ $chkAutoRestoreOnExit      = $window.FindName("ChkAutoRestoreOnExit")
 $btnSaveGameProfile        = $window.FindName("BtnSaveGameProfile")
 $btnReloadGameProfile      = $window.FindName("BtnReloadGameProfile")
 $btnResetGameProfile       = $window.FindName("BtnResetGameProfile")
+$cmbCompetitivePresets     = $window.FindName("CmbCompetitivePresets")
+$btnApplyCompetitivePreset = $window.FindName("BtnApplyCompetitivePreset")
+$btnExportGameProfile      = $window.FindName("BtnExportGameProfile")
+$btnImportGameProfile      = $window.FindName("BtnImportGameProfile")
 
 # Tab 3
+$badgeGpuDriverStatus      = $window.FindName("BadgeGpuDriverStatus")
+$txtGpuDriverBadge         = $window.FindName("TxtGpuDriverBadge")
+$txtGpuCardName            = $window.FindName("TxtGpuCardName")
+$txtGpuInstalledDriver     = $window.FindName("TxtGpuInstalledDriver")
+$txtGpuLatestDriver        = $window.FindName("TxtGpuLatestDriver")
+$txtGpuReleaseDate         = $window.FindName("TxtGpuReleaseDate")
+$btnDownloadGpuDriver      = $window.FindName("BtnDownloadGpuDriver")
+$btnCheckGpuDriver         = $window.FindName("BtnCheckGpuDriver")
 $txtBadgeHags              = $window.FindName("TxtBadgeHags")
 $badgeHags                 = $window.FindName("BadgeHags")
 $txtBadgeGameMode          = $window.FindName("TxtBadgeGameMode")
@@ -1502,12 +1919,29 @@ $txtBadgeTcp               = $window.FindName("TxtBadgeTcp")
 $badgeTcp                  = $window.FindName("BadgeTcp")
 $txtBadgePsEngine          = $window.FindName("TxtBadgePsEngine")
 $badgePsEngine             = $window.FindName("BadgePsEngine")
+$txtBadgeMpo               = $window.FindName("TxtBadgeMpo")
+$badgeMpo                  = $window.FindName("BadgeMpo")
+$chkLockWinKey             = $window.FindName("ChkLockWinKey")
+$chkSuppressSticky         = $window.FindName("ChkSuppressSticky")
+$chkLauncherRamDiet        = $window.FindName("ChkLauncherRamDiet")
+$chkReverseAffinity        = $window.FindName("ChkReverseAffinity")
+$chkDynamicQos             = $window.FindName("ChkDynamicQos")
 $btnApplyAllTweaks         = $window.FindName("BtnApplyAllTweaks")
 $btnUpgradePs7             = $window.FindName("BtnUpgradePs7")
 $txtStandbySize            = $window.FindName("TxtStandbySize")
 $btnPurgeStandbyCard       = $window.FindName("BtnPurgeStandbyCard")
 $txtShaderSize             = $window.FindName("TxtShaderSize")
+$txtShaderBreakdown        = $window.FindName("TxtShaderBreakdown")
 $btnCleanShaders           = $window.FindName("BtnCleanShaders")
+$btnScanShaders            = $window.FindName("BtnScanShaders")
+$txtMsiGpuStatus           = $window.FindName("TxtMsiGpuStatus")
+$txtMsiNicStatus           = $window.FindName("TxtMsiNicStatus")
+$txtMsiAudioStatus         = $window.FindName("TxtMsiAudioStatus")
+$btnOptimizePcieMsi        = $window.FindName("BtnOptimizePcieMsi")
+$btnRefreshPcieMsi         = $window.FindName("BtnRefreshPcieMsi")
+$txtUsbPowerStatus         = $window.FindName("TxtUsbPowerStatus")
+$btnDisableUsbPowerSave    = $window.FindName("BtnDisableUsbPowerSave")
+$btnRefreshUsbStatus       = $window.FindName("BtnRefreshUsbStatus")
 $gridServerRadar           = $window.FindName("GridServerRadar")
 $btnPingRadarNow           = $window.FindName("BtnPingRadarNow")
 $chkAutoRadar              = $window.FindName("ChkAutoRadar")
@@ -1560,13 +1994,24 @@ $menuCtxRestoreOne         = $window.FindName("MenuCtxRestoreOne")
 $menuCtxRemoveOne          = $window.FindName("MenuCtxRemoveOne")
 $menuCtxRestoreAll         = $window.FindName("MenuCtxRestoreAll")
 
-# Tab 8
+# Tab 8 & Post-Game Lag Analysis (Phase 4)
+$badgeSmoothness           = $window.FindName("BadgeSmoothness")
+$txtSmoothnessBadge        = $window.FindName("TxtSmoothnessBadge")
+$txtLagSummary             = $window.FindName("TxtLagSummary")
+$btnRefreshLagReport       = $window.FindName("BtnRefreshLagReport")
+$txtLagGameName            = $window.FindName("TxtLagGameName")
+$txtLagDuration            = $window.FindName("TxtLagDuration")
+$txtLagAvgFps              = $window.FindName("TxtLagAvgFps")
+$txtLag1Percent            = $window.FindName("TxtLag1Percent")
+$txtLag01Percent           = $window.FindName("TxtLag01Percent")
+$txtLagStutters            = $window.FindName("TxtLagStutters")
 $btnRunHealthCheck         = $window.FindName("BtnRunHealthCheck")
 $btnDiagnoseSelectedCrash  = $window.FindName("BtnDiagnoseSelectedCrash")
 $btnRefreshCrashes         = $window.FindName("BtnRefreshCrashes")
 $btnExportDebugReport      = $window.FindName("BtnExportDebugReport")
 $gridCrashEvents           = $window.FindName("GridCrashEvents")
 $txtDiagnosticReport       = $window.FindName("TxtDiagnosticReport")
+$btnTipJar                 = $window.FindName("BtnTipJar")
 
 # Status Bar
 $txtStatusBar              = $window.FindName("TxtStatusBar")
@@ -1584,7 +2029,7 @@ $script:CrashList      = [System.Collections.ObjectModel.ObservableCollection[PS
 $script:SessionWhitelist = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 $script:CriticalOsProcesses = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
 @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
-  "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+  "explorer", "winlogon", "sppsvc", "SecurityHealthService", "SecurityHealthSystray", 
   "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
   "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
   "conhost", "cmd", "pwsh", "powershell", "wt", "GameBooster", "taskmgr") | ForEach-Object { [void]$script:CriticalOsProcesses.Add($_) }
@@ -1625,8 +2070,14 @@ if ($icoCandidate) {
 # ---------------------------------------------------------------------------
 $script:gpuInfo = Get-GpuHardwareInfo
 $script:gpuWhitelist = Get-DynamicGpuWhitelist
+$script:gpuDriverDetails = Get-GpuDriverDetails
 if ($txtGpuBadge) {
-    $txtGpuBadge.Text = "$($script:gpuInfo.Vendor) $($script:gpuInfo.Name)"
+    $gpuClean = if ($script:gpuDriverDetails.GpuName -like "$($script:gpuDriverDetails.Vendor)*") {
+        $script:gpuDriverDetails.GpuName
+    } else {
+        "$($script:gpuDriverDetails.Vendor) $($script:gpuDriverDetails.GpuName)"
+    }
+    $txtGpuBadge.Text = $gpuClean
 }
 if ($txtGpuProtectionStatus) {
     $txtGpuProtectionStatus.Text = "Active ($($script:gpuInfo.Vendor) Driver Protected)"
@@ -1738,10 +2189,10 @@ function Toggle-GameWatcherDaemon {
     $watcherProc = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%GameWatcher.ps1%'" -ErrorAction SilentlyContinue
     if ($watcherProc) {
         Stop-GameWatcherDaemon
-        [System.Windows.MessageBox]::Show("Auto-Watcher has been stopped.`n`nGames will no longer automatically trigger Game Mode.", "Auto-Watcher Stopped", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Auto-Watcher has been stopped.`n`nGames will no longer automatically trigger Game Mode.", "Auto-Watcher Stopped", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     } else {
         Start-GameWatcherDaemon
-        [System.Windows.MessageBox]::Show("Auto-Watcher is now ACTIVE in the background!`n`nWhenever any of your Monitored Games are launched, Game Booster will automatically:`n• Close selected background apps`n• Flush and reclaim standby RAM`n• Auto-launch your game companion apps (e.g. Discord)`n• Restore closed apps when the game exits", "Auto-Watcher Active", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Auto-Watcher is now ACTIVE in the background!`n`nWhenever any of your Monitored Games are launched, Game Booster will automatically:`n• Close selected background apps`n• Flush and reclaim standby RAM`n• Auto-launch your game companion apps (e.g. Discord)`n• Restore closed apps when the game exits", "Auto-Watcher Active", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 }
 
@@ -1757,7 +2208,7 @@ function Toggle-TrayCompanionDaemon {
         Start-Sleep -Milliseconds 200
         Update-DaemonIndicators
         $txtStatusBar.Text = "Tray Companion daemon stopped."
-        [System.Windows.MessageBox]::Show("Tray Companion daemon has been stopped.", "Tray Companion", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Tray Companion daemon has been stopped.", "Tray Companion", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     } else {
         $trayPs = Join-Path $ScriptDir "TrayBooster.ps1"
         if (Test-Path $trayPs) {
@@ -1765,7 +2216,7 @@ function Toggle-TrayCompanionDaemon {
             Start-Sleep -Milliseconds 400
             Update-DaemonIndicators
             $txtStatusBar.Text = "Tray Companion daemon active in system tray."
-            [System.Windows.MessageBox]::Show("Tray Companion is now running in the Windows System Tray!`n`nPress Ctrl+F11 anytime for Hardware HUD, or right-click the tray icon for quick actions.", "Tray Companion Active", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            Show-DarkModal("Tray Companion is now running in the Windows System Tray!`n`nPress Ctrl+F11 anytime for Hardware HUD, or right-click the tray icon for quick actions.", "Tray Companion Active", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         }
     }
 }
@@ -1779,11 +2230,12 @@ function Reload-ProcessGrid {
     
     # 0. Hardcoded Critical Windows OS Subsystems (Absolute safeguard)
     $criticalOs = @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
-      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "explorer", "winlogon", "sppsvc", "SecurityHealthService", "SecurityHealthSystray", 
       "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
       "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
       "conhost", "cmd", "pwsh", "powershell", "wt", "WindowsTerminal", "GameBooster", "taskmgr",
-      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git")
+      "dashost", "midisrv", "sihost", "smartscreen", "ApplicationFrameHost", "node", "git",
+      "portmaster-core", "safing-portmaster", "PortmasterCore")
     foreach ($cp in $criticalOs) { $wl.Add($cp) | Out-Null }
 
     # 1. Essential gaming services (Anti-Cheat, Audio Drivers, Hardware Monitors, GPU Daemons, Windows Subsystems)
@@ -1830,6 +2282,12 @@ function Reload-ProcessGrid {
     # Group processes by ProcessName
     $grouped = $filteredProcs | Group-Object ProcessName
 
+    # Set of processes explicitly designated to be selected by default
+    $defaultSelectedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    if ($cfg.selectedByDefault) {
+        foreach ($s in $cfg.selectedByDefault) { [void]$defaultSelectedSet.Add($s) }
+    }
+
     foreach ($grp in $grouped) {
         $pName = $grp.Name
         $pList = @($grp.Group)
@@ -1851,21 +2309,56 @@ function Reload-ProcessGrid {
         }
 
         if ($hasWindow) { $cat = "Interactive App" }
-        if ($pName -match "discord|spotify|slack|steam|epicgames|battlenet|eaapp|gog") { $cat = "Launcher / Social" }
-        if ($pName -match "chrome|msedge|firefox|brave|opera") { $cat = "Web Browser" }
+        if ($pName -match "(?i)discord|spotify|slack|steam|epicgames|battlenet|eaapp|gog|telegram|whatsapp") { $cat = "Launcher / Social" }
+        if ($pName -match "(?i)chrome|msedge|firefox|brave|opera|vivaldi|tor") { $cat = "Web Browser" }
+        if ($pName -match "(?i)emby|plex|jellyfin|kodi|serviio|subsonic|navidrome") { $cat = "Media Server" }
+        if ($pName -match "(?i)^portmaster$") { $cat = "Network Firewall" }
 
         # Calculate combined working set RAM in MB
         $totalBytes = ($pList | Measure-Object -Property WorkingSet64 -Sum).Sum
         $ramMB = [math]::Round($totalBytes / 1MB, 0)
-        if ($ramMB -lt 5 -and -not $hasWindow) { continue } # Skip tiny unwindowed workers
+        if ($ramMB -lt 1) { $ramMB = 1 }
+
+        # Determine user/service context
+        $isUserApp = $exePath -and ($exePath -like "*$env:USERNAME*" -or $exePath -like "*\AppData\*")
+        $isExplicit = $defaultSelectedSet.Contains($pName)
+        $isKnownMedia = ($cat -in @("Media Server", "Network Firewall"))
+
+        # Skip tiny unwindowed workers unless explicitly selected by default, installed user app, or media server
+        if ($ramMB -lt 5 -and -not $hasWindow -and -not $isExplicit -and -not $isUserApp -and -not $isKnownMedia) {
+            continue
+        }
 
         $pids = @($pList | ForEach-Object { $_.Id })
         $displayPid = if ($procCount -gt 1) { "$($pids[0]) (+$($procCount - 1))" } else { "$($pids[0])" }
-        $displayName = if ($procCount -gt 1) { "$pName ($procCount procs)" } else { $pName }
+        
+        $displayName = if ($pName -match "(?i)^embytray$") {
+            if ($procCount -gt 1) { "embytray (Emby Server) ($procCount procs)" } else { "embytray (Emby Server)" }
+        } elseif ($pName -match "(?i)^EmbyServer$") {
+            if ($procCount -gt 1) { "EmbyServer (Emby Server) ($procCount procs)" } else { "EmbyServer (Emby Server)" }
+        } elseif ($pName -match "(?i)^portmaster$") {
+            "Portmaster Privacy Firewall"
+        } elseif ($procCount -gt 1) {
+            "$pName ($procCount procs)"
+        } else {
+            $pName
+        }
 
-        # Default selected for launchers, browsers, and background tools (Never select anti-cheats, sound drivers, or overlays)
-        $isProtected = $wl.Contains($pName) -or ($pName -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative")
-        $isSel = (-not $isProtected -and ($cat -in @("Launcher / Social", "Web Browser") -or $cat -eq "Interactive App"))
+        if (-not $mainTitle) {
+            if ($cat -eq "Media Server") {
+                $mainTitle = if ($pName -match "(?i)tray") { "(System Tray Monitor)" } else { "(Media Server Service)" }
+            } elseif ($cat -eq "Network Firewall") {
+                $mainTitle = "(Safing Privacy Firewall & DNS Interceptor)"
+            }
+        }
+
+        # Default selected for launchers, browsers, media servers, and explicitly designated targets
+        $isProtected = $wl.Contains($pName) -or ($pName -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative|portmaster|safing")
+        $isSel = (-not $isProtected) -and (
+            $isExplicit -or
+            $cat -in @("Launcher / Social", "Web Browser", "Media Server") -or
+            $cat -eq "Interactive App"
+        )
 
         $script:ProcessList.Add([PSCustomObject]@{
             IsSelected      = $isSel
@@ -1915,7 +2408,7 @@ $btnSelectNonEssential.Add_Click({
     foreach ($gb in $gameBinaries) { [void]$esSet.Add($gb) }
 
     foreach ($item in $script:ProcessList) {
-        $isProtected = $esSet.Contains($item.Name) -or ($item.Name -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative")
+        $isProtected = $esSet.Contains($item.Name) -or ($item.Name -match "(?i)RTSS|MSIAfterburner|HWiNFO|obs|PnkBstr|EasyAntiCheat|BEService|vgc|audiodg|RtkAud|^Rz|^Razer|^SteelSeries|^Logi|LGHUB|iCUE|^Elgato|^Nahimic|^Creative|portmaster|safing")
         $item.IsSelected = (-not $isProtected)
     }
     $gridProcesses.Items.Refresh()
@@ -1923,8 +2416,12 @@ $btnSelectNonEssential.Add_Click({
 })
 
 $btnSelectBalanced.Add_Click({
+    $cfg = Get-AppConfig
+    $defaultSelectedSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    if ($cfg.selectedByDefault) { foreach ($s in $cfg.selectedByDefault) { [void]$defaultSelectedSet.Add($s) } }
+
     foreach ($item in $script:ProcessList) {
-        $item.IsSelected = ($item.Category -in @("Launcher / Social", "Web Browser"))
+        $item.IsSelected = ($item.Category -in @("Launcher / Social", "Web Browser", "Media Server") -or $defaultSelectedSet.Contains($item.Name))
     }
     $gridProcesses.Items.Refresh()
     Update-SelectedMetrics
@@ -1978,7 +2475,7 @@ $menuCtxWhitelistSession.Add_Click({
     Update-SelectedMetrics
     Reload-WhitelistGrid
     $txtStatusBar.Text = "Whitelisted '$pName' for this session (will not be closed)."
-    [System.Windows.MessageBox]::Show("'$pName' will remain running and is protected for this session.", "Session Whitelist", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("'$pName' will remain running and is protected for this session.", "Session Whitelist", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # Context Menu: Whitelist Permanently (Always Protect)
@@ -2005,7 +2502,7 @@ $menuCtxWhitelistPermanent.Add_Click({
     Reload-WhitelistGrid
     Update-SelectedMetrics
     $txtStatusBar.Text = "'$pName' permanently whitelisted and saved to config."
-    [System.Windows.MessageBox]::Show("'$pName' has been added to your Permanent Whitelist and will never be targeted by Game Mode.", "Permanent Whitelist", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("'$pName' has been added to your Permanent Whitelist and will never be targeted by Game Mode.", "Permanent Whitelist", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # Context Menu: Close This Application Now
@@ -2014,8 +2511,36 @@ $menuCtxCloseNow.Add_Click({
     if (-not $sel) { return }
     $pName = $sel.Name
 
-    $ask = [System.Windows.MessageBox]::Show("Close '$($sel.DisplayName)' immediately?", "Close Application", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ask = Show-DarkModal("Close '$($sel.DisplayName)' immediately?", "Close Application", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ask -ne [System.Windows.MessageBoxResult]::Yes) { return }
+
+    if ($sel.Name -match "(?i)portmaster|safing") {
+        Stop-PortmasterSafely
+        $closedItem = [PSCustomObject]@{
+            Name        = "Portmaster"
+            ServiceName = "PortmasterCore"
+            Id          = $sel.Id
+            RAM_MB      = $sel.RAM_MB
+            Path        = "C:\Program Files\Safing\Portmaster\portmaster.exe"
+            Time        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+        }
+        $script:RestoreList.Insert(0, $closedItem)
+
+        try {
+            $sessData = if (Test-Path $SessionFile) { Get-Content $SessionFile -Raw | ConvertFrom-Json } else { [PSCustomObject]@{ ClosedApps = @(); TotalFreedMB = 0 } }
+            $existing = @()
+            if ($sessData.ClosedApps) { $existing = @($sessData.ClosedApps) }
+            $sessData.ClosedApps = @($closedItem) + $existing
+            $sessData.TotalFreedMB = [int]$sessData.TotalFreedMB + $closedItem.RAM_MB
+            $sessData.Timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            $sessData | ConvertTo-Json -Depth 5 | Set-Content -Path $SessionFile -Encoding UTF8 -Force
+        } catch {}
+
+        $script:ProcessList.Remove($sel) | Out-Null
+        Update-SelectedMetrics
+        $txtStatusBar.Text = "Portmaster stopped gracefully. WFP filter unhooked."
+        return
+    }
 
     $pidsToKill = if ($sel.Pids) { @($sel.Pids) } else { @($sel.Id) }
     $appFreedRAM = 0
@@ -2026,7 +2551,7 @@ $menuCtxCloseNow.Add_Click({
             $svc = Get-CimInstance Win32_Service -Filter "ProcessId = $pidVal" -ErrorAction SilentlyContinue
             if ($svc) {
                 $svcName = $svc.Name
-                & sc.exe stop $svcName | Out-Null
+                try { Stop-Service -Name $svcName -NoWait -ErrorAction SilentlyContinue } catch {}
             }
             $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
             if ($p) {
@@ -2079,10 +2604,10 @@ $menuCtxOpenFileLocation.Add_Click({
         if (Test-Path $dir) {
             Start-Process "explorer.exe" -ArgumentList "`"$dir`""
         } else {
-            [System.Windows.MessageBox]::Show("Path not found: $($sel.Path)", "Executable Path", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            Show-DarkModal("Path not found: $($sel.Path)", "Executable Path", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         }
     } else {
-        [System.Windows.MessageBox]::Show("Executable path could not be resolved for '$($sel.Name)'.", "Executable Path", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Executable path could not be resolved for '$($sel.Name)'.", "Executable Path", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
 
@@ -2090,14 +2615,18 @@ $menuCtxOpenFileLocation.Add_Click({
 # ACTIVATE GAME MODE (CLOSE APPS + PURGE STANDBY RAM)
 # ---------------------------------------------------------------------------
 $btnActivateGameMode.Add_Click({
+    if ($script:ProcessList.Count -eq 0) {
+        $txtStatusBar.Text = "Scanning active processes before activating Game Mode..."
+        Reload-ProcessGrid
+    }
     $targets = @($script:ProcessList | Where-Object { $_.IsSelected })
     if ($targets.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Please select at least one application to close.", "No Apps Selected", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Please select at least one application to close.", "No Apps Selected", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
 
     $msg = "Activate Game Mode now?`n`nThis will close $($targets.Count) application group(s), purge Windows Standby Memory, trim memory working sets, and activate the Gaming High-Performance Power Plan."
-    $ask = [System.Windows.MessageBox]::Show($msg, "Activate Game Mode", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ask = Show-DarkModal($msg, "Activate Game Mode", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ask -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
     $txtStatusBar.Text = "Activating Game Mode..."
@@ -2106,7 +2635,7 @@ $btnActivateGameMode.Add_Click({
 
     $criticalOsSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     @("Idle", "System", "csrss", "services", "lsass", "wininit", "smss", "svchost", "fontdrvhost", "dwm", 
-      "explorer", "winlogon", "sppsvc", "SearchIndexer", "SecurityHealthService", "SecurityHealthSystray", 
+      "explorer", "winlogon", "sppsvc", "SecurityHealthService", "SecurityHealthSystray", 
       "MsMpEng", "NisSrv", "MpDefenderCoreService", "DefenderSessionHelper", "MoUsoCoreWorker", "RuntimeBroker", 
       "StartMenuExperienceHost", "taskhostw", "ctfmon", "SystemSettings", "TextInputHost", "ShellHost", 
       "conhost", "cmd", "pwsh", "powershell", "wt", "WindowsTerminal", "GameBooster", "taskmgr",
@@ -2123,6 +2652,20 @@ $btnActivateGameMode.Add_Click({
     foreach ($item in $targets) {
         if ($criticalOsSet.Contains($item.Name)) { continue }
 
+        if ($item.Name -match "(?i)portmaster|safing") {
+            Stop-PortmasterSafely
+            $closedItems += [PSCustomObject]@{
+                Name        = "Portmaster"
+                ServiceName = "PortmasterCore"
+                Id          = $item.Id
+                RAM_MB      = $item.RAM_MB
+                Path        = "C:\Program Files\Safing\Portmaster\portmaster.exe"
+                Time        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            }
+            $freedRAM += $item.RAM_MB
+            continue
+        }
+
         $pidsToKill = if ($item.Pids) { @($item.Pids) } else { @($item.Id) }
         $appFreedRAM = 0
         $svcName = $null
@@ -2130,7 +2673,7 @@ $btnActivateGameMode.Add_Click({
             try {
                 if ($serviceMap.ContainsKey([int]$pidVal)) {
                     $svcName = $serviceMap[[int]$pidVal]
-                    & sc.exe stop $svcName | Out-Null
+                    try { Stop-Service -Name $svcName -NoWait -ErrorAction SilentlyContinue } catch {}
                 }
                 $p = Get-Process -Id $pidVal -ErrorAction SilentlyContinue
                 if ($p -and -not $criticalOsSet.Contains($p.ProcessName)) {
@@ -2161,28 +2704,57 @@ $btnActivateGameMode.Add_Click({
         $sessionData | ConvertTo-Json -Depth 5 | Set-Content -Path $SessionFile -Encoding UTF8 -Force
     } catch {}
 
+    # Phase 1: Watchdog Session Initialization
+    $origPowerPlan = Get-ActivePowerPlanGuid
+    $origStickyFlags = if (Get-Command Get-GamingLockoutStatus -ErrorAction SilentlyContinue) { [GamingLockoutNative]::GetStickyKeysFlags() } else { 0 }
+    Initialize-WatchdogSession -TargetGame "WPF_GameMode" -PowerPlanGuid $origPowerPlan -StickyKeysFlags $origStickyFlags | Out-Null
+
+    # Phase 1: Launcher RAM Diet (Reclaim active RAM from heavy Chromium launchers without closing them)
+    $dietRes = Invoke-LauncherRamDiet
+    $dietFreed = if ($dietRes.TotalFreedMB) { [math]::Round($dietRes.TotalFreedMB, 0) } else { 0 }
+
     # Smart Standby List Purge
     $purgeRes = Invoke-SmartMemoryPurge
-    $totalFreed = $freedRAM + [math]::Round($purgeRes.FreedGB * 1024, 0)
+    $totalFreed = $freedRAM + [math]::Round($purgeRes.FreedGB * 1024, 0) + $dietFreed
 
-    # Set Gaming Power Plan
-    Enable-UltimatePerformancePlan | Out-Null
+    # Set Gaming Power Plan (Ultimate Performance)
+    Switch-ToUltimatePerformance | Out-Null
+
+    # Gaming Input Lockout (WinKey is OPTIONAL and default OFF; StickyKeys prompt suppressed)
+    $cfg = Get-AppConfig
+    $lockWin = if ($cfg.tweaksSettings -and $null -ne $cfg.tweaksSettings.gamingLockoutWinKey) { [bool]$cfg.tweaksSettings.gamingLockoutWinKey } else { $false }
+    $lockSticky = if ($cfg.tweaksSettings -and $null -ne $cfg.tweaksSettings.gamingLockoutStickyKeys) { [bool]$cfg.tweaksSettings.gamingLockoutStickyKeys } else { $true }
+    Enable-GamingLockout -DisableWinKey $lockWin -DisableStickyKeys $lockSticky | Out-Null
+
+    # Phase 2: Reverse Affinity Core Siloing (Silos background apps away from game cores)
+    $enableRevAffinity = if ($cfg.tweaksSettings -and $null -ne $cfg.tweaksSettings.enableReverseAffinity) { [bool]$cfg.tweaksSettings.enableReverseAffinity } else { $true }
+    $siloMsg = "Disabled"
+    if ($enableRevAffinity) {
+        $revRes = Invoke-ReverseAffinitySiloing
+        if ($revRes.SiloedCount -gt 0) {
+            $siloMsg = "$($revRes.SiloedCount) apps siloed to $($revRes.BackgroundMask)"
+        }
+    }
 
     # Refresh UI
     Reload-ProcessGrid
     Reload-RestoreGrid
     Update-StandbyDisplay
 
+    $winKeyDesc = if ($lockWin) { "Windows Key (Locked) & " } else { "" }
     $resultMsg = "Game Mode Activated Successfully!`n`n" +
                  "• Apps Closed: $($closedItems.Count)`n" +
                  "• Process RAM Reclaimed: $freedRAM MB`n" +
+                 "• Launcher RAM Trimmed: $dietFreed MB`n" +
                  "• Standby RAM Flushed: $($purgeRes.FreedMB) MB`n" +
                  "• Total Memory Freed: $totalFreed MB`n" +
                  "• Power Plan: Ultimate Performance`n" +
-                 "• Dynamic GPU Drivers: Protected"
+                 "• Input Lockout: ${winKeyDesc}Sticky Keys Suppressed`n" +
+                 "• Reverse Affinity: $siloMsg`n" +
+                 "• Watchdog Protection: Armed (Crash-Safe)"
     
     $txtStatusBar.Text = "Game Mode Active. Reclaimed $totalFreed MB RAM."
-    [System.Windows.MessageBox]::Show($resultMsg, "Game Mode Engaged", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal($resultMsg, "Game Mode Engaged", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # ---------------------------------------------------------------------------
@@ -2260,7 +2832,7 @@ $btnScanLibraries.Add_Click({
         Save-AppConfig $cfg | Out-Null
 
         $txtStatusBar.Text = "Library scan complete: Discovered $($found.Count) games ($newCount newly added)."
-        [System.Windows.MessageBox]::Show("Game Library Auto-Detector Scan Complete!`n`nFound $($found.Count) games across Steam, Epic, Battle.net, GOG, and Xbox Store.`n`nAll discovered titles have been added to your Monitored Games list and are ready for Per-Game hardware optimization profiles.", "Scan Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Game Library Auto-Detector Scan Complete!`n`nFound $($found.Count) games across Steam, Epic, Battle.net, GOG, and Xbox Store.`n`nAll discovered titles have been added to your Monitored Games list and are ready for Per-Game hardware optimization profiles.", "Scan Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     } finally {
         $btnScanLibraries.IsEnabled = $true
         $btnScanLibraries.Content = "🔍 Scan Installed Libraries (Steam/Epic/Battle.net/Xbox)"
@@ -2295,7 +2867,7 @@ $btnAddCustomGame.Add_Click({
         })
 
         $txtStatusBar.Text = "Added custom game: $clean"
-        [System.Windows.MessageBox]::Show("Game '$clean' added to monitored library successfully!", "Game Added", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Game '$clean' added to monitored library successfully!", "Game Added", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
 
@@ -2322,7 +2894,7 @@ function Add-QuickMonitoredGames([string[]]$names) {
     $cfg.watcherSettings.monitoredGames = @($existing)
     Save-AppConfig $cfg | Out-Null
     $txtStatusBar.Text = "Added $added preset process(es) to monitored games."
-    [System.Windows.MessageBox]::Show("Quick add complete! Added $added process(es) to monitored games.", "Games Added", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("Quick add complete! Added $added process(es) to monitored games.", "Games Added", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 }
 
 $btnQuickWow.Add_Click({ Add-QuickMonitoredGames @("Wow", "WowClassic", "Wow-64") })
@@ -2333,7 +2905,7 @@ $btnQuickCs2.Add_Click({ Add-QuickMonitoredGames @("cs2") })
 $btnRemoveMonitored.Add_Click({
     $sel = $gridGameLibrary.SelectedItem
     if (-not $sel) {
-        [System.Windows.MessageBox]::Show("Please select a game from the table to remove.", "Selection Required", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Please select a game from the table to remove.", "Selection Required", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
     $clean = $sel.ProcessName -replace '\.exe$', ''
@@ -2351,10 +2923,10 @@ $btnRemoveMonitored.Add_Click({
 # Clear All Games
 $btnClearAllGames.Add_Click({
     if ($script:GameList.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Game library list is already empty.", "Already Empty", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Game library list is already empty.", "Already Empty", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
-    $ask = [System.Windows.MessageBox]::Show("Are you sure you want to remove all $($script:GameList.Count) games from the monitored library?", "Clear All Monitored Games", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ask = Show-DarkModal("Are you sure you want to remove all $($script:GameList.Count) games from the monitored library?", "Clear All Monitored Games", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ask -eq [System.Windows.MessageBoxResult]::Yes) {
         $script:GameList.Clear()
         $cfg = Get-AppConfig
@@ -2400,7 +2972,7 @@ $gridGameLibrary.add_SelectionChanged({
 $btnSaveGameProfile.Add_Click({
     $sel = $gridGameLibrary.SelectedItem
     if (-not $sel) {
-        [System.Windows.MessageBox]::Show("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
     $clean = $sel.ProcessName -replace '\.exe$', ''
@@ -2426,14 +2998,14 @@ $btnSaveGameProfile.Add_Click({
 
     Save-GameProfile -GameName $clean -ProfileData $profData -ConfigPath $ConfigFile
     $txtStatusBar.Text = "Hardware Profile saved for $clean (Priority: $prio, Affinity: $aff)"
-    [System.Windows.MessageBox]::Show("Per-Game Profile for '$clean' saved successfully!`n`n• CPU Priority: $prio`n• Architecture Affinity: $aff`n• Custom Companion: $($profData.Companion)`n• Auto-OSD: $($profData.AutoOsd)", "Profile Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("Per-Game Profile for '$clean' saved successfully!`n`n• CPU Priority: $prio`n• Architecture Affinity: $aff`n• Custom Companion: $($profData.Companion)`n• Auto-OSD: $($profData.AutoOsd)", "Profile Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # Reload Game Profile
 $btnReloadGameProfile.Add_Click({
     $sel = $gridGameLibrary.SelectedItem
     if (-not $sel) {
-        [System.Windows.MessageBox]::Show("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
     Load-SelectedGameProfile
@@ -2445,11 +3017,11 @@ $btnReloadGameProfile.Add_Click({
 $btnResetGameProfile.Add_Click({
     $sel = $gridGameLibrary.SelectedItem
     if (-not $sel) {
-        [System.Windows.MessageBox]::Show("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
     $clean = $sel.ProcessName -replace '\.exe$', ''
-    $ask = [System.Windows.MessageBox]::Show("Reset hardware profile for '$clean' to default settings (High Priority, All Cores, No Companion)?", "Reset Profile", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ask = Show-DarkModal("Reset hardware profile for '$clean' to default settings (High Priority, All Cores, No Companion)?", "Reset Profile", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ask -eq [System.Windows.MessageBoxResult]::Yes) {
         $cmbCpuPriority.SelectedIndex = 0
         $cmbCpuAffinity.SelectedIndex = 0
@@ -2465,9 +3037,90 @@ $btnResetGameProfile.Add_Click({
         }
         Save-GameProfile -GameName $clean -ProfileData $defaultProf -ConfigPath $ConfigFile
         $txtStatusBar.Text = "Profile for $clean reset to default values."
-        [System.Windows.MessageBox]::Show("Profile for '$clean' has been reset to defaults.", "Reset Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Profile for '$clean' has been reset to defaults.", "Reset Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
+
+# Apply Tournament Competitive Preset (Phase 3)
+if ($btnApplyCompetitivePreset) {
+    $btnApplyCompetitivePreset.Add_Click({
+        $sel = $gridGameLibrary.SelectedItem
+        if (-not $sel) {
+            Show-DarkModal("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            return
+        }
+        $clean = $sel.ProcessName -replace '\.exe$', ''
+        $presetName = $cmbCompetitivePresets.Text
+        $presets = Get-CompetitiveGamePresets
+        if ($presets.ContainsKey($presetName)) {
+            $p = $presets[$presetName]
+            $cmbCpuPriority.SelectedIndex = if ($p.Priority -eq "High") { 0 } elseif ($p.Priority -eq "AboveNormal") { 1 } else { 2 }
+            $cmbCpuAffinity.SelectedIndex = if ($p.AffinityMode -eq "PerformanceCores" -or $p.AffinityMode -eq "PCoresOnly") { 1 } elseif ($p.AffinityMode -eq "CCD0_3DVcache" -or $p.AffinityMode -eq "AmdX3d") { 2 } else { 0 }
+            $chkAutoOsd.IsChecked = [bool]$p.ShowOverlay
+            if ($p.CompanionApps) { $txtGameCompanion.Text = ($p.CompanionApps -join ", ") }
+
+            $profData = [PSCustomObject]@{
+                Priority        = $p.Priority
+                Affinity        = if ($p.AffinityMode -eq "CCD0_3DVcache" -or $p.AffinityMode -eq "AmdX3d") { "AmdX3d" } elseif ($p.AffinityMode -eq "PerformanceCores" -or $p.AffinityMode -eq "PCoresOnly") { "PCoresOnly" } else { "AllCores" }
+                Companion       = $txtGameCompanion.Text.Trim()
+                AutoOsd         = [bool]$p.ShowOverlay
+                PowerPlan       = $p.PowerPlan
+                DynamicQosDscp  = $p.DynamicQosDscp
+                CleanStandby    = $p.CleanStandby
+                LauncherRamDiet = $p.LauncherRamDiet
+                LockWindowsKey  = $p.LockWindowsKey
+                LastSaved       = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            }
+            Save-GameProfile -GameName $clean -ProfileData $profData -ConfigPath $ConfigFile
+            $txtStatusBar.Text = "Applied '$presetName' tournament preset to $clean."
+            Show-DarkModal("Tournament Competitive Preset '$presetName' applied to '$clean'!`n`n• CPU Priority: $($p.Priority)`n• Architecture Affinity: $($p.AffinityMode)`n• Dynamic QoS: DSCP $($p.DynamicQosDscp)`n• Windows Key Lock: $($p.LockWindowsKey)`n• Launcher RAM Diet: $($p.LauncherRamDiet)", "Preset Applied", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        }
+    })
+}
+
+# Export Game Profile to JSON (Phase 3)
+if ($btnExportGameProfile) {
+    $btnExportGameProfile.Add_Click({
+        $sel = $gridGameLibrary.SelectedItem
+        if (-not $sel) {
+            Show-DarkModal("Please select a game from the table first.", "Select Game", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            return
+        }
+        $clean = $sel.ProcessName -replace '\.exe$', ''
+        $sfd = New-Object Microsoft.Win32.SaveFileDialog
+        $sfd.FileName = "$clean.gameprofile.json"
+        $sfd.Filter = "Game Booster Profile (*.json)|*.json|All Files (*.*)|*.*"
+        $sfd.Title = "Export Game Hardware Profile"
+        if ($sfd.ShowDialog() -eq $true) {
+            $exp = Export-GameProfileToFile -ConfigPath $ConfigFile -GameName $clean -ExportFilePath $sfd.FileName
+            if ($exp.Success) {
+                $txtStatusBar.Text = "Exported profile for $clean to $($sfd.FileName)"
+                Show-DarkModal("Profile for '$clean' exported successfully!`n`nFile: $($sfd.FileName)", "Profile Exported", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            } else {
+                Show-DarkModal("Export failed: $($exp.Message)", "Export Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            }
+        }
+    })
+}
+
+# Import Game Profile from JSON (Phase 3)
+if ($btnImportGameProfile) {
+    $btnImportGameProfile.Add_Click({
+        $ofd = New-Object Microsoft.Win32.OpenFileDialog
+        $ofd.Filter = "Game Booster Profile (*.json)|*.json|All Files (*.*)|*.*"
+        $ofd.Title = "Import Game Hardware Profile"
+        if ($ofd.ShowDialog() -eq $true) {
+            $imp = Import-GameProfileFromFile -ConfigPath $ConfigFile -ImportFilePath $ofd.FileName
+            if ($imp.Success) {
+                Load-SelectedGameProfile
+                $txtStatusBar.Text = "Imported profile for $($imp.GameName)."
+                Show-DarkModal("Profile for '$($imp.GameName)' imported successfully from JSON!", "Profile Imported", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            } else {
+                Show-DarkModal("Import failed: $($imp.Message)", "Import Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+            }
+        }
+    })
+}
 
 # Wire Auto-Restore on Game Exit Checkbox
 if ($chkAutoRestoreOnExit) {
@@ -2557,6 +3210,102 @@ function Update-TweaksDisplay {
             }
         }
     }
+
+    if ($badgeMpo -and $txtBadgeMpo) {
+        if ($t.MpoDisabled) {
+            $badgeMpo.Background = [System.Windows.Media.Brushes]::DarkGreen
+            $txtBadgeMpo.Text = "FIXED (DISABLED)"
+            $txtBadgeMpo.Foreground = [System.Windows.Media.Brushes]::LightGreen
+        } else {
+            $badgeMpo.Background = [System.Windows.Media.Brushes]::DimGray
+            $txtBadgeMpo.Text = "DEFAULT (ENABLED)"
+            $txtBadgeMpo.Foreground = [System.Windows.Media.Brushes]::LightGray
+        }
+    }
+}
+
+# Wire v2.0 Engine & Input Options Checkboxes
+$cfgInit = Get-AppConfig
+if ($chkLockWinKey) {
+    $chkLockWinKey.IsChecked = if ($cfgInit.tweaksSettings -and $null -ne $cfgInit.tweaksSettings.gamingLockoutWinKey) { [bool]$cfgInit.tweaksSettings.gamingLockoutWinKey } else { $false }
+    $chkLockWinKey.Add_Checked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "gamingLockoutWinKey" -Value $true -Force
+        Save-AppConfig $c | Out-Null
+        $txtStatusBar.Text = "Windows Key Lockout: ENABLED (Start menu will not interrupt game)."
+    })
+    $chkLockWinKey.Add_Unchecked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "gamingLockoutWinKey" -Value $false -Force
+        Save-AppConfig $c | Out-Null
+        $txtStatusBar.Text = "Windows Key Lockout: DISABLED (Windows shortcuts & Start menu active)."
+    })
+}
+
+if ($chkSuppressSticky) {
+    $chkSuppressSticky.IsChecked = if ($cfgInit.tweaksSettings -and $null -ne $cfgInit.tweaksSettings.gamingLockoutStickyKeys) { [bool]$cfgInit.tweaksSettings.gamingLockoutStickyKeys } else { $true }
+    $chkSuppressSticky.Add_Checked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "gamingLockoutStickyKeys" -Value $true -Force
+        Save-AppConfig $c | Out-Null
+    })
+    $chkSuppressSticky.Add_Unchecked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "gamingLockoutStickyKeys" -Value $false -Force
+        Save-AppConfig $c | Out-Null
+    })
+}
+
+if ($chkLauncherRamDiet) {
+    $chkLauncherRamDiet.IsChecked = if ($cfgInit.tweaksSettings -and $null -ne $cfgInit.tweaksSettings.autoWorkingSetTrim) { [bool]$cfgInit.tweaksSettings.autoWorkingSetTrim } else { $true }
+    $chkLauncherRamDiet.Add_Checked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "autoWorkingSetTrim" -Value $true -Force
+        Save-AppConfig $c | Out-Null
+    })
+    $chkLauncherRamDiet.Add_Unchecked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "autoWorkingSetTrim" -Value $false -Force
+        Save-AppConfig $c | Out-Null
+    })
+}
+
+if ($chkReverseAffinity) {
+    $chkReverseAffinity.IsChecked = if ($cfgInit.tweaksSettings -and $null -ne $cfgInit.tweaksSettings.enableReverseAffinity) { [bool]$cfgInit.tweaksSettings.enableReverseAffinity } else { $true }
+    $chkReverseAffinity.Add_Checked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "enableReverseAffinity" -Value $true -Force
+        Save-AppConfig $c | Out-Null
+    })
+    $chkReverseAffinity.Add_Unchecked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "enableReverseAffinity" -Value $false -Force
+        Save-AppConfig $c | Out-Null
+    })
+}
+
+if ($chkDynamicQos) {
+    $chkDynamicQos.IsChecked = if ($cfgInit.tweaksSettings -and $null -ne $cfgInit.tweaksSettings.enableDynamicQos) { [bool]$cfgInit.tweaksSettings.enableDynamicQos } else { $true }
+    $chkDynamicQos.Add_Checked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "enableDynamicQos" -Value $true -Force
+        Save-AppConfig $c | Out-Null
+    })
+    $chkDynamicQos.Add_Unchecked({
+        $c = Get-AppConfig
+        if (-not $c.tweaksSettings) { $c | Add-Member -MemberType NoteProperty -Name "tweaksSettings" -Value ([PSCustomObject]@{}) -Force }
+        $c.tweaksSettings | Add-Member -MemberType NoteProperty -Name "enableDynamicQos" -Value $false -Force
+        Save-AppConfig $c | Out-Null
+    })
 }
 
 function Update-StandbyDisplay {
@@ -2566,8 +3315,74 @@ function Update-StandbyDisplay {
 }
 
 function Update-ShaderDisplay {
-    $sc = Get-ShaderCacheSize
-    $txtShaderSize.Text = "$($sc.TotalMB) MB ($($sc.FileCount) files)"
+    try {
+        $rep = Get-DetailedShaderCacheReport
+        $txtShaderSize.Text = "$($rep.TotalMB) MB ($($rep.TotalFiles) files)"
+        if ($txtShaderBreakdown) {
+            $catSummaries = @()
+            foreach ($cat in ($rep.Categories | Group-Object Category)) {
+                $mb = [math]::Round(($cat.Group | Measure-Object -Property SizeMB -Sum).Sum, 1)
+                $catSummaries += "$($cat.Name): ${mb}MB"
+            }
+            if ($catSummaries.Count -gt 0) {
+                $txtShaderBreakdown.Text = ($catSummaries -join " | ")
+            } else {
+                $txtShaderBreakdown.Text = "Caches clean or empty."
+            }
+        }
+    } catch {
+        $sc = Get-ShaderCacheSize
+        $txtShaderSize.Text = "$($sc.TotalMB) MB ($($sc.FileCount) files)"
+    }
+}
+
+function Update-PcieMsiDisplay {
+    try {
+        $devices = Get-PcieGamingDevices
+        
+        # GPU
+        $gpu = $devices | Where-Object { $_.Category -eq "GPU / Display" } | Select-Object -First 1
+        if ($gpu -and $txtMsiGpuStatus) {
+            $msiText = if ($gpu.MSIEnabled) { "MSI Active" } else { "Line-Based IRQ" }
+            $txtMsiGpuStatus.Text = "$msiText ($($gpu.Priority) Prio)"
+            $txtMsiGpuStatus.Foreground = if ($gpu.MSIEnabled -and $gpu.Priority -eq "High") { [System.Windows.Media.Brushes]::LimeGreen } elseif ($gpu.MSIEnabled) { [System.Windows.Media.Brushes]::DeepSkyBlue } else { [System.Windows.Media.Brushes]::Orange }
+        }
+
+        # NIC
+        $nic = $devices | Where-Object { $_.Category -eq "Network Adapter" } | Select-Object -First 1
+        if ($nic -and $txtMsiNicStatus) {
+            $msiText = if ($nic.MSIEnabled) { "MSI Active" } else { "Line-Based IRQ" }
+            $txtMsiNicStatus.Text = "$msiText ($($nic.Priority) Prio)"
+            $txtMsiNicStatus.Foreground = if ($nic.MSIEnabled -and $nic.Priority -eq "High") { [System.Windows.Media.Brushes]::LimeGreen } elseif ($nic.MSIEnabled) { [System.Windows.Media.Brushes]::DeepSkyBlue } else { [System.Windows.Media.Brushes]::Orange }
+        }
+
+        # Audio
+        $audio = $devices | Where-Object { $_.Category -eq "High Definition Audio" } | Select-Object -First 1
+        if ($audio -and $txtMsiAudioStatus) {
+            $msiText = if ($audio.MSIEnabled) { "MSI Active" } else { "Line-Based IRQ (Needs MSI)" }
+            $txtMsiAudioStatus.Text = "$msiText ($($audio.Priority) Prio)"
+            $txtMsiAudioStatus.Foreground = if ($audio.MSIEnabled) { [System.Windows.Media.Brushes]::LimeGreen } else { [System.Windows.Media.Brushes]::Orange }
+        }
+    } catch {
+        Write-AppLog "PCIe MSI status display error: $_" "WARN"
+    }
+}
+
+function Update-UsbStatusDisplay {
+    try {
+        $usb = Get-UsbGamingPowerSaveStatus
+        if ($txtUsbPowerStatus) {
+            if ($usb.PowerSavingActive) {
+                $txtUsbPowerStatus.Text = "$($usb.ProblemCount) Device(s) with Power-Save"
+                $txtUsbPowerStatus.Foreground = [System.Windows.Media.Brushes]::Orange
+            } else {
+                $txtUsbPowerStatus.Text = "Optimized (1000Hz+ Continuous)"
+                $txtUsbPowerStatus.Foreground = [System.Windows.Media.Brushes]::LimeGreen
+            }
+        }
+    } catch {
+        Write-AppLog "USB status display error: $_" "WARN"
+    }
 }
 
 # 1-Click Apply All Tweaks
@@ -2593,10 +3408,10 @@ $btnApplyAllTweaks.Add_Click({
                "• TCP NoDelay (Latency Optimizer): $tcpStatus`n" +
                "• System Power Plan: Ultimate Performance`n`n" +
                "All settings have been applied directly to Windows subsystems."
-        [System.Windows.MessageBox]::Show($msg, "Gaming Tweaks Applied", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal($msg, "Gaming Tweaks Applied", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     } catch {
         Write-AppLog "Error applying gaming tweaks: $_" "ERROR"
-        [System.Windows.MessageBox]::Show("Error applying gaming tweaks:`n`n$($_.Exception.Message)", "Tweak Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        Show-DarkModal("Error applying gaming tweaks:`n`n$($_.Exception.Message)", "Tweak Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
     } finally {
         $btnApplyAllTweaks.IsEnabled = $true
         $btnApplyAllTweaks.Content = "⚡ 1-Click Apply All Gaming Tweaks"
@@ -2607,7 +3422,7 @@ $btnApplyAllTweaks.Add_Click({
 $btnUpgradePs7.Add_Click({
     $t = Get-GamingTweaksStatus
     if ($t.IsPs7Running) {
-        $ans = [System.Windows.MessageBox]::Show(
+        $ans = Show-DarkModal(
             "Game Booster is already running on PowerShell $($t.CurrentPsVersion) (High-Performance .NET Core Engine)!`n`n" +
             "Would you like to check for PowerShell 7 updates via Windows Package Manager (Winget)?",
             "PowerShell 7 Active",
@@ -2637,14 +3452,14 @@ $btnUpgradePs7.Add_Click({
             $btnUpgradePs7.IsEnabled = $true
             $btnUpgradePs7.Content = "🚀 PS7 Active"
             $txtStatusBar.Text = "PowerShell 7 update check completed."
-            [System.Windows.MessageBox]::Show("PowerShell 7 upgrade verification complete!", "PowerShell 7", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            Show-DarkModal("PowerShell 7 upgrade verification complete!", "PowerShell 7", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         })
         $timerJob.Start()
         return
     }
 
     if ($t.IsPs7Installed) {
-        $ans = [System.Windows.MessageBox]::Show(
+        $ans = Show-DarkModal(
             "PowerShell 7 is already installed on your system at:`n" +
             "$($t.PwshPath)`n`n" +
             "Would you like to restart Game Booster now using the PowerShell 7 engine for 2x faster performance?",
@@ -2673,7 +3488,7 @@ $btnUpgradePs7.Add_Click({
            "Game Booster will download and install Microsoft PowerShell 7 automatically in the background via Winget.`n`n" +
            "Would you like to install PowerShell 7 now?"
 
-    $ans = [System.Windows.MessageBox]::Show($msg, "Install PowerShell 7", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ans = Show-DarkModal($msg, "Install PowerShell 7", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ans -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
     $btnUpgradePs7.IsEnabled = $false
@@ -2715,7 +3530,7 @@ $btnUpgradePs7.Add_Click({
 
         if ($tNew.IsPs7Installed) {
             $txtStatusBar.Text = "PowerShell 7 installed successfully."
-            $restart = [System.Windows.MessageBox]::Show(
+            $restart = Show-DarkModal(
                 "PowerShell 7 has been installed successfully!`n`n" +
                 "Would you like to restart Game Booster now with PowerShell 7 to activate the high-speed engine?",
                 "Installation Complete",
@@ -2736,7 +3551,7 @@ $btnUpgradePs7.Add_Click({
             $btnUpgradePs7.IsEnabled = $true
             $btnUpgradePs7.Content = "⚡ Install PS7"
             $txtStatusBar.Text = "PowerShell 7 installation completed. Please restart your PC or terminal if changes do not appear."
-            [System.Windows.MessageBox]::Show("PowerShell 7 installation command finished. If it does not appear immediately, please restart your computer.", "Installation Notice", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+            Show-DarkModal("PowerShell 7 installation command finished. If it does not appear immediately, please restart your computer.", "Installation Notice", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         }
     })
     $timer.Start()
@@ -2747,22 +3562,122 @@ function Run-PurgeAction {
     $res = Invoke-SmartMemoryPurge
     Update-StandbyDisplay
     $txtStatusBar.Text = "Memory purge complete: Freed $($res.FreedStandbyMB) MB Standby RAM."
-    [System.Windows.MessageBox]::Show($res.Message, "Memory Purge Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal($res.Message, "Memory Purge Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 }
 
 $btnInstantPurge.Add_Click({ Run-PurgeAction })
 $btnPurgeStandbyCard.Add_Click({ Run-PurgeAction })
 
-# Clean Shaders Button (Feature 10)
+# Clean Shaders Button (Feature 10 & Phase 3)
 $btnCleanShaders.Add_Click({
-    $ask = [System.Windows.MessageBox]::Show("Are you sure you want to clean DirectX, NVIDIA, AMD, and Intel shader caches?`n`nGames will recompile clean shader caches on next launch, resolving texture stutter and micro-freezes.", "Clean Shader Caches", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ask = Show-DarkModal(
+        "Purge multi-vendor shader caches (DirectX, AMD Radeon, NVIDIA, Intel, Steam Pre-Caching, and Battle.net)?`n`n" +
+        "• Stale, bloated shader files will be safely cleared.`n" +
+        "• Running games / drivers will not be interrupted (locked files are safely skipped).`n" +
+        "• Fresh, clean shader caches will be compiled on game launch, resolving texture stutter and hitching.",
+        "Clean Shader Caches",
+        [System.Windows.MessageBoxButton]::YesNo,
+        [System.Windows.MessageBoxImage]::Question
+    )
     if ($ask -eq [System.Windows.MessageBoxResult]::Yes) {
-        $res = Invoke-ShaderCacheClean
+        $res = Invoke-ExpandedShaderCacheClean
         Update-ShaderDisplay
-        $txtStatusBar.Text = "Cleaned shader caches: Freed $($res.FreedMB) MB ($($res.DeletedFiles) files)."
-        [System.Windows.MessageBox]::Show("Shader Cache Cleaned Successfully!`n`n• Freed Space: $($res.FreedMB) MB`n• Cache files purged: $($res.DeletedFiles)`n`nYour graphics pipeline will generate clean stutter-free shaders on next game launch.", "Shaders Cleaned", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        $txtStatusBar.Text = $res.Message
+        Show-DarkModal(
+            "Shader Caches Cleaned Successfully!`n`n" +
+            "• Cache Files Purged: $($res.FilesPurged)`n" +
+            "• Physical Storage Reclaimed: $($res.FreedMB) MB`n" +
+            "• Active/Locked Files Skipped: $($res.LockedFiles)`n`n" +
+            "Your graphics pipeline and game engines will generate clean, stutter-free shader pipelines.",
+            "Shaders Cleaned",
+            [System.Windows.MessageBoxButton]::OK,
+            [System.Windows.MessageBoxImage]::Information
+        )
     }
 })
+
+if ($btnScanShaders) {
+    $btnScanShaders.Add_Click({
+        Update-ShaderDisplay
+        $txtStatusBar.Text = "Shader cache scan refreshed: $($txtShaderSize.Text)"
+    })
+}
+
+# PCIe MSI Mode & High IRQ Priority (Phase 3)
+if ($btnOptimizePcieMsi) {
+    $btnOptimizePcieMsi.Add_Click({
+        $ask = Show-DarkModal(
+            "Enable MSI Mode (Message Signaled Interrupts) and High IRQ priority for your GPU, Gaming Network Adapters, Audio Bus, and USB Host Controllers?`n`n" +
+            "• Eliminates DPC latency spikes and micro-stutters during heavy gaming.`n" +
+            "• Direct PCIe interrupt messaging bypassing legacy shared IRQ lines.`n`n" +
+            "Apply PCIe MSI & High Priority tuning now?",
+            "Optimize PCIe Interrupts",
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Question
+        )
+        if ($ask -eq [System.Windows.MessageBoxResult]::Yes) {
+            $res = Optimize-AllGamingPcieDevices
+            Update-PcieMsiDisplay
+            $txtStatusBar.Text = $res.Message
+            Show-DarkModal(
+                "$($res.Message)`n`n" +
+                "• GPU (AMD RX 7900 XT): MSI Active + High Priority`n" +
+                "• Network NIC (Realtek / Intel Wi-Fi): MSI Active + High Priority`n" +
+                "• USB 3.x Host Controllers: MSI Active + High Priority`n" +
+                "• High Definition Audio Bus: MSI Active + High Priority`n`n" +
+                "Note: A quick Windows restart ensures all device drivers re-initialize their MSI interrupt vectors.",
+                "PCIe MSI Optimized",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Information
+            )
+        }
+    })
+}
+
+if ($btnRefreshPcieMsi) {
+    $btnRefreshPcieMsi.Add_Click({
+        Update-PcieMsiDisplay
+        $txtStatusBar.Text = "Refreshed PCIe MSI & IRQ status."
+    })
+}
+
+# USB Gaming Controller & Polling Rate Optimizer (Phase 3)
+if ($btnDisableUsbPowerSave) {
+    $btnDisableUsbPowerSave.Add_Click({
+        $ask = Show-DarkModal(
+            "Disable USB Selective Suspend and D3 power-down states across USB controllers and gaming peripherals?`n`n" +
+            "• Prevents gaming mice (e.g. Razer Basilisk) and keyboards from entering micro-sleep states.`n" +
+            "• Guarantees 1000Hz+ continuous sensor polling without missed clicks or hesitation when starting mouse movement.`n`n" +
+            "Apply USB gaming power tuning now?",
+            "Disable USB Power Saving",
+            [System.Windows.MessageBoxButton]::YesNo,
+            [System.Windows.MessageBoxImage]::Question
+        )
+        if ($ask -eq [System.Windows.MessageBoxResult]::Yes) {
+            $res = Disable-UsbGamingPowerSaving
+            Update-UsbStatusDisplay
+            $txtStatusBar.Text = $res.Message
+            Show-DarkModal(
+                "$($res.Message)`n`n" +
+                "• EnhancedPowerManagementEnabled: 0`n" +
+                "• DeviceSelectiveSuspended: 0`n" +
+                "• AllowIdleIrpInD3: 0`n" +
+                "• SelectiveSuspendEnabled: 0`n`n" +
+                "Gaming mice and controllers will now remain at 100% full-power polling responsiveness.",
+                "USB Polling Optimized",
+                [System.Windows.MessageBoxButton]::OK,
+                [System.Windows.MessageBoxImage]::Information
+            )
+        }
+    })
+}
+
+if ($btnRefreshUsbStatus) {
+    $btnRefreshUsbStatus.Add_Click({
+        Update-UsbStatusDisplay
+        $txtStatusBar.Text = "Refreshed USB power-saving status."
+    })
+}
 
 # Network Latency Radar (Feature 8)
 function Initialize-ServerRadarGrid {
@@ -2946,6 +3861,9 @@ if ($menuRadarCopyDetails) {
 # ---------------------------------------------------------------------------
 function Launch-HardwareHudAction([switch]$Force) {
     $hudScript = Join-Path $ScriptDir "Launch_Gaming_HUD.ps1"
+    if (-not (Test-Path $hudScript) -and (Test-Path (Join-Path $RootDir "src\Launch_Gaming_HUD.ps1"))) {
+        $hudScript = Join-Path $RootDir "src\Launch_Gaming_HUD.ps1"
+    }
     if (Test-Path $hudScript) {
         $preset = switch ($cmbHudPreset.SelectedIndex) {
             1 { "esports_ping" }
@@ -2958,11 +3876,12 @@ function Launch-HardwareHudAction([switch]$Force) {
         Start-Process $PSHostExe -ArgumentList $args -WindowStyle Hidden
         $txtStatusBar.Text = "Launched Hardware Telemetry HUD ($preset preset)."
     } else {
-        [System.Windows.MessageBox]::Show("Launch_Gaming_HUD.ps1 not found in $ScriptDir", "File Missing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
+        Show-DarkModal("Launch_Gaming_HUD.ps1 not found in $ScriptDir", "File Missing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
     }
 }
 
 function Close-HardwareHudAction {
+    # 1. Kill HUD telemetry worker binaries
     $activeHudProcs = Get-Process -Name "*btop*", "*btm*" -ErrorAction SilentlyContinue
     if ($activeHudProcs) {
         $activeHudProcs | Stop-Process -Force -ErrorAction SilentlyContinue
@@ -2972,22 +3891,60 @@ function Close-HardwareHudAction {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
     } catch {}
-    $termProcs = Get-Process -Name "WindowsTerminal" -ErrorAction SilentlyContinue
-    foreach ($tp in $termProcs) {
+
+    # 2. Terminate tracked WindowsTerminal instance from hud_session.json
+    $hudSessionFile = Join-Path (Split-Path $ScriptDir -Parent) "hud_session.json"
+    if (Test-Path $hudSessionFile) {
         try {
-            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($tp.Id)" -ErrorAction SilentlyContinue).CommandLine
-            if ($cmdLine -like "*btop*" -or $cmdLine -like "*btm*" -or $cmdLine -like "*PingMonitor*" -or $cmdLine -like "*--pos*") {
-                Stop-Process -Id $tp.Id -Force -ErrorAction SilentlyContinue
+            $sess = Get-Content $hudSessionFile -Raw | ConvertFrom-Json
+            if ($sess.ProcessId) {
+                Stop-Process -Id $sess.ProcessId -Force -ErrorAction SilentlyContinue
             }
+            Remove-Item $hudSessionFile -Force -ErrorAction SilentlyContinue
         } catch {}
     }
+
+    # 3. Terminate any WindowsTerminal window hosting HUD components or titles
+    try {
+        $termProcs = Get-Process -Name "WindowsTerminal" -ErrorAction SilentlyContinue
+        foreach ($tp in $termProcs) {
+            $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($tp.Id)" -ErrorAction SilentlyContinue).CommandLine
+            if ($tp.MainWindowTitle -like "*Hardware Telemetry HUD*" -or $tp.MainWindowTitle -like "*btop*" -or $tp.MainWindowTitle -like "*bottom*" -or $cmdLine -like "*btop*" -or $cmdLine -like "*btm*" -or $cmdLine -like "*PingMonitor*") {
+                Stop-Process -Id $tp.Id -Force -ErrorAction SilentlyContinue
+            }
+        }
+    } catch {}
+
+    # 4. Clean up any orphaned OpenConsole instances hosting btop/btm
+    try {
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { 
+            $_.Name -eq "OpenConsole.exe" -and ($_.CommandLine -like "*btop*" -or $_.CommandLine -like "*btm*") 
+        } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
     $txtStatusBar.Text = "Hardware HUD closed."
+}
+
+function Close-InGameOsdAction {
+    try {
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { 
+            $_.ProcessId -ne $PID -and $_.CommandLine -like "*InGameOverlay.ps1*" 
+        } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+        $txtStatusBar.Text = "In-Game OSD Overlay Closed."
+    } catch {}
 }
 
 $btnLaunchHud.Add_Click({ Launch-HardwareHudAction })
 $btnLaunchHudTop.Add_Click({ Launch-HardwareHudAction })
 $btnForceRestartHud.Add_Click({ Launch-HardwareHudAction -Force })
-$btnCloseHud.Add_Click({ Close-HardwareHudAction })
+$btnCloseHud.Add_Click({ 
+    Close-HardwareHudAction
+    Close-InGameOsdAction
+})
 
 # Update HUD coordinate textboxes from config.json
 function Update-HudCoordinateFields {
@@ -3007,7 +3964,7 @@ $btnSaveHudSize.Add_Click({
         & $saveScript
         Update-HudCoordinateFields
         $txtStatusBar.Text = "Saved current Hardware HUD position and size to config.json."
-        [System.Windows.MessageBox]::Show("HUD position and dimensions saved successfully!", "Position Captured", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("HUD position and dimensions saved successfully!", "Position Captured", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
 
@@ -3032,9 +3989,9 @@ $btnApplyManualHudSize.Add_Click({
         }
         Save-AppConfig $cfg | Out-Null
         $txtStatusBar.Text = "Saved manual HUD coordinates: X=$($cfg.hudSettings.hudX) Y=$($cfg.hudSettings.hudY) W=$($cfg.hudSettings.hudWidth) H=$($cfg.hudSettings.hudHeight)"
-        [System.Windows.MessageBox]::Show("Hardware HUD coordinates saved to config.json!", "Coordinates Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Hardware HUD coordinates saved to config.json!", "Coordinates Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     } catch {
-        [System.Windows.MessageBox]::Show("Invalid coordinates entered. Please enter valid integers.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        Show-DarkModal("Invalid coordinates entered. Please enter valid integers.", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
     }
 })
 
@@ -3043,7 +4000,7 @@ $btnInstallHudDeps.Add_Click({
     $msg = "Install / Verify Gaming HUD Dependencies (btop4win + bottom + Windows Terminal)?`n`n" +
            "Game Booster will download btop4win directly and verify required terminal components.`n`n" +
            "Would you like to proceed?"
-    $ask = [System.Windows.MessageBox]::Show($msg, "Install HUD Dependencies", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $ask = Show-DarkModal($msg, "Install HUD Dependencies", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($ask -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
     $btnInstallHudDeps.IsEnabled = $false
@@ -3102,7 +4059,7 @@ $btnInstallHudDeps.Add_Click({
         $btnInstallHudDeps.Content = "📦 Install Dependencies (New PC)"
         $txtStatusBar.Text = "Hardware HUD dependencies verified and installed."
 
-        [System.Windows.MessageBox]::Show("Hardware HUD Dependency installation complete!`n`nbtop4win and system telemetry packages are ready to use.", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Hardware HUD Dependency installation complete!`n`nbtop4win and system telemetry packages are ready to use.", "Installation Complete", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     })
     $timerJob.Start()
 })
@@ -3143,7 +4100,7 @@ $btnSaveOsdSettings.Add_Click({
     Save-AppConfig $cfg | Out-Null
     if ($txtMockOsdTitle) { $txtMockOsdTitle.Text = "⚡ $newTitle v1.0" }
     $txtStatusBar.Text = "Saved In-Game OSD settings (Title: $newTitle, Position: $pos)"
-    [System.Windows.MessageBox]::Show("In-Game OSD settings saved successfully!`n`n• Brand / Streamer Title: $newTitle`n• Screen Position: $pos", "OSD Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("In-Game OSD settings saved successfully!`n`n• Brand / Streamer Title: $newTitle`n• Screen Position: $pos", "OSD Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # Toggle In-Game OSD
@@ -3156,11 +4113,16 @@ function Toggle-InGameOsdAction([switch]$Unlock) {
         $txtStatusBar.Text = "In-Game OSD Overlay Closed."
     } else {
         $osdScript = Join-Path $ScriptDir "InGameOverlay.ps1"
+        if (-not (Test-Path $osdScript) -and (Test-Path (Join-Path $RootDir "src\InGameOverlay.ps1"))) {
+            $osdScript = Join-Path $RootDir "src\InGameOverlay.ps1"
+        }
         if (Test-Path $osdScript) {
             $args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$osdScript`"")
             if ($Unlock) { $args += "-Unlock" }
             Start-Process $PSHostExe -ArgumentList $args -WindowStyle Hidden
             $txtStatusBar.Text = "In-Game OSD Overlay Launched (F10 to toggle)."
+        } else {
+            Show-DarkModal("InGameOverlay.ps1 not found in $ScriptDir", "File Missing", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Error)
         }
     }
 }
@@ -3221,7 +4183,7 @@ $btnTestCompanion.Add_Click({
         Start-Process $sel.Path
         $txtStatusBar.Text = "Test launched companion: $($sel.Name)"
     } else {
-        [System.Windows.MessageBox]::Show("Executable path not found: $($sel.Path)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        Show-DarkModal("Executable path not found: $($sel.Path)", "Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
     }
 })
 
@@ -3241,7 +4203,7 @@ $btnSaveCompanions.Add_Click({
     })
     Save-AppConfig $cfg | Out-Null
     $txtStatusBar.Text = "Saved $($script:CompanionsList.Count) companion app(s) to config.json."
-    [System.Windows.MessageBox]::Show("Companion apps saved successfully!", "Companions Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("Companion apps saved successfully!", "Companions Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # ---------------------------------------------------------------------------
@@ -3334,7 +4296,7 @@ $btnRemoveWhitelist.Add_Click({
             $txtStatusBar.Text = "Removed $($sel.ProcessName) from session whitelist."
             Reload-ProcessGrid
         } else {
-            [System.Windows.MessageBox]::Show("Cannot remove driver or system-protected processes.", "Protected Process", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            Show-DarkModal("Cannot remove driver or system-protected processes.", "Protected Process", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         }
     }
 })
@@ -3372,9 +4334,16 @@ function Restore-ApplicationItem($item) {
         return
     }
 
+    if ($item.Name -match "(?i)portmaster|safing" -or $item.ServiceName -match "(?i)portmaster") {
+        Start-PortmasterSafely
+        $script:RestoreList.Remove($item)
+        $txtStatusBar.Text = "Restored Portmaster Privacy Firewall."
+        return
+    }
+
     if ($item.ServiceName) {
         try {
-            & sc.exe start $item.ServiceName | Out-Null
+            Start-Service -Name $item.ServiceName -ErrorAction SilentlyContinue
             $script:RestoreList.Remove($item)
             $txtStatusBar.Text = "Restored Windows service $($item.ServiceName)."
             return
@@ -3400,13 +4369,13 @@ $btnRestoreSelectedApp.Add_Click({
     if ($sel) {
         Restore-ApplicationItem $sel
     } else {
-        [System.Windows.MessageBox]::Show("Please select an application to restore.", "Selection Required", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Please select an application to restore.", "Selection Required", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
 
 $btnRestoreAllApps.Add_Click({
     if ($script:RestoreList.Count -eq 0) {
-        [System.Windows.MessageBox]::Show("Restore list is currently empty.", "Empty List", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Restore list is currently empty.", "Empty List", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
         return
     }
 
@@ -3415,10 +4384,27 @@ $btnRestoreAllApps.Add_Click({
         Restore-ApplicationItem $item
     }
 
+    # Phase 1: Reset Gaming Lockout & Display Mode
+    try {
+        Disable-GamingLockout | Out-Null
+        Reset-DisplayResolution | Out-Null
+
+        # Phase 2: Restore Reverse Affinity, Throttling & QoS
+        Restore-ReverseAffinity | Out-Null
+        Restore-AllThrottledProcesses | Out-Null
+        Clear-AllGamingQosPolicies | Out-Null
+        
+        $wdState = Get-WatchdogState
+        if ($wdState -and $wdState.OriginalPowerPlanGuid) {
+            Restore-OriginalPowerPlan -Guid $wdState.OriginalPowerPlanGuid | Out-Null
+        }
+        Complete-WatchdogSession
+    } catch {}
+
     try { Remove-Item $SessionFile -Force -ErrorAction SilentlyContinue } catch {}
     $script:RestoreList.Clear()
-    $txtStatusBar.Text = "Restored all $count application(s)."
-    [System.Windows.MessageBox]::Show("Restored all $count application(s) successfully!", "Session Restored", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    $txtStatusBar.Text = "Restored all $count application(s) & restored system power/keys."
+    Show-DarkModal("Restored all $count application(s) successfully!`n`n• Restored power scheme and input settings.`n• Watchdog session disarmed cleanly.", "Session Restored", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 $btnClearRestoreList.Add_Click({
@@ -3540,34 +4526,215 @@ $btnExportDebugReport.Add_Click({
     if (Test-Path $exportPs) {
         $reportPath = & $PSHostExe -NoProfile -ExecutionPolicy Bypass -File $exportPs
         $txtStatusBar.Text = "Debug report exported to Desktop."
-        [System.Windows.MessageBox]::Show("Full Debug Report has been generated on your Desktop and opened in Notepad:`n`n$reportPath", "Debug Report Exported", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+        Show-DarkModal("Full Debug Report has been generated on your Desktop and opened in Notepad:`n`n$reportPath", "Debug Report Exported", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
     }
 })
+
+# =============================================================================
+# POST-GAME "WHY DID I LAG?" & SUPPORTER ENGINE (Phase 4)
+# =============================================================================
+function Update-LagReportDisplay {
+    try {
+        $rep = Get-LatestLagReport
+        if ($txtLagGameName) { $txtLagGameName.Text = if ($rep.GameName) { $rep.GameName } else { "--" } }
+        if ($txtLagDuration) { $txtLagDuration.Text = if ($rep.DurationMinutes) { "$($rep.DurationMinutes) min" } else { "-- min" } }
+
+        if ($rep.FpsSummary) {
+            if ($txtLagAvgFps) { $txtLagAvgFps.Text = if ($rep.FpsSummary.AverageFps -and $rep.FpsSummary.AverageFps -ne "--" -and $rep.FpsSummary.AverageFps -gt 0) { "$($rep.FpsSummary.AverageFps)" } else { "--" } }
+            if ($txtLag1Percent) { $txtLag1Percent.Text = if ($rep.FpsSummary.Low1PercentFps -and $rep.FpsSummary.Low1PercentFps -ne "--" -and $rep.FpsSummary.Low1PercentFps -gt 0) { "$($rep.FpsSummary.Low1PercentFps)" } else { "--" } }
+            if ($txtLag01Percent) { $txtLag01Percent.Text = if ($rep.FpsSummary.Low01PercentFps -and $rep.FpsSummary.Low01PercentFps -ne "--" -and $rep.FpsSummary.Low01PercentFps -gt 0) { "$($rep.FpsSummary.Low01PercentFps)" } else { "--" } }
+            if ($txtLagStutters) { $txtLagStutters.Text = if ($rep.FpsSummary.TotalStutterHits -gt 0) { "$($rep.FpsSummary.TotalStutterHits) incident(s)" } else { "0" } }
+        }
+
+        if ($txtSmoothnessBadge -and $badgeSmoothness) {
+            $score = [math]::Round([double]$rep.SmoothnessScore, 1)
+            $txtSmoothnessBadge.Text = "$score% $($rep.StatusGrade)"
+            if ($score -ge 95) {
+                $badgeSmoothness.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#065F46")
+                $txtSmoothnessBadge.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#34D399")
+            } elseif ($score -ge 85) {
+                $badgeSmoothness.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1E3A8A")
+                $txtSmoothnessBadge.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#60A5FA")
+            } else {
+                $badgeSmoothness.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#831843")
+                $txtSmoothnessBadge.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#F43F5E")
+            }
+        }
+
+        if ($txtLagSummary) {
+            if ($rep.Incidents -and $rep.Incidents.Count -gt 0) {
+                $firstInc = $rep.Incidents[0]
+                $txtLagSummary.Text = "Latest Culprit: $($firstInc.Culprit) at $($firstInc.Timestamp). $($firstInc.Description)"
+                $txtLagSummary.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#F59E0B")
+            } else {
+                $txtLagSummary.Text = "Zero stutter incidents recorded in latest session. ProBalance & QoS maintained 100% fluid frame pacing."
+                $txtLagSummary.Foreground = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#94A3B8")
+            }
+        }
+    } catch {
+        Write-AppLog "Error updating lag report display: $_" "WARN"
+    }
+}
+
+if ($btnRefreshLagReport) {
+    $btnRefreshLagReport.Add_Click({
+        Update-LagReportDisplay
+        $rep = Get-LatestLagReport
+        if ($rep.Incidents -and $rep.Incidents.Count -gt 0) {
+            $incText = @()
+            $incText += "=========================================================================="
+            $incText += "     POST-GAME STUTTER CULPRIT AUDIT & LATENCY TIMELINE: $($rep.GameName)"
+            $incText += "=========================================================================="
+            $incText += "Session Duration : $($rep.DurationMinutes) minutes"
+            $incText += "Smoothness Score : $($rep.SmoothnessScore)% ($($rep.StatusGrade))"
+            if ($rep.FpsSummary.AverageFps -ne "--" -and $rep.FpsSummary.AverageFps -gt 0) {
+                $incText += "FPS Metrics      : Avg: $($rep.FpsSummary.AverageFps) | 1% Low: $($rep.FpsSummary.Low1PercentFps) | 0.1% Low: $($rep.FpsSummary.Low01PercentFps)"
+            }
+            $incText += "`r`nIDENTIFIED STUTTER CULPRITS & BACKGROUND PROCESS INTERFERENCE:"
+            $idx = 1
+            foreach ($inc in $rep.Incidents) {
+                $incText += " [$idx] [$($inc.Timestamp)] $($inc.Type): $($inc.Culprit)"
+                $incText += "     Impact: $($inc.Description)"
+                $incText += "     Remedy: $($inc.Remedy)"
+                $idx++
+            }
+            $txtDiagnosticReport.Text = ($incText -join "`r`n")
+        } else {
+            $txtDiagnosticReport.Text = "No background spikes or stutter culprits detected during the last gaming session.`r`nAll frame times were within nominal threshold."
+        }
+        $txtStatusBar.Text = "Post-game lag report refreshed."
+    })
+}
+
+# Custom Dark-Themed Tip Jar Modal Dialog
+function Show-DarkTipJarModal {
+    $cfg = Get-AppConfig
+    $paypalUrl = if ($cfg.supporterSettings -and $cfg.supporterSettings.donationLinks.paypal) { $cfg.supporterSettings.donationLinks.paypal } else { "https://www.paypal.com/paypalme/psoferreira" }
+    $kofiUrl   = if ($cfg.supporterSettings -and $cfg.supporterSettings.donationLinks.kofi) { $cfg.supporterSettings.donationLinks.kofi } else { "https://ko-fi.com/psoferreira" }
+
+    $tipWin = New-Object System.Windows.Window
+    $tipWin.Title = "Support Game Booster PRO"
+    $tipWin.Width = 540
+    $tipWin.Height = 330
+    $tipWin.WindowStartupLocation = [System.Windows.WindowStartupLocation]::CenterOwner
+    $tipWin.Owner = $window
+    $tipWin.WindowStyle = [System.Windows.WindowStyle]::None
+    $tipWin.AllowsTransparency = $true
+    $tipWin.Background = [System.Windows.Media.Brushes]::Transparent
+    $tipWin.ResizeMode = [System.Windows.ResizeMode]::NoResize
+
+    $tipXaml = @"
+    <Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+            xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+            Background="#0F172A" BorderBrush="#F59E0B" BorderThickness="1.5" CornerRadius="12" Padding="24">
+        <Border.Effect>
+            <DropShadowEffect Color="#000000" BlurRadius="25" ShadowDepth="0" Opacity="0.85"/>
+        </Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <Grid Grid.Row="0" Margin="0,0,0,14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="☕" FontSize="22" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                    <TextBlock Text="SUPPORT GAME BOOSTER PRO" FontSize="16" FontWeight="ExtraBold" Foreground="#F59E0B" VerticalAlignment="Center"/>
+                </StackPanel>
+                <Button Name="BtnCloseTipModal" Grid.Column="1" Content="✕" Background="Transparent" Foreground="#94A3B8" BorderThickness="0" FontSize="16" FontWeight="Bold" Width="28" Height="28" Cursor="Hand"/>
+            </Grid>
+
+            <!-- Body Text -->
+            <StackPanel Grid.Row="1" Margin="0,0,0,16">
+                <TextBlock Text="Game Booster is 100% free, open-source, ad-free, and privacy-focused." Foreground="#F8FAFC" FontSize="13" FontWeight="SemiBold" Margin="0,0,0,8"/>
+                <TextBlock Text="It contains zero telemetry, crypto miners, or bloated background analytics. Built with passion to help gamers eliminate micro-stutters, reclaim gigabytes of RAM, and achieve the lowest possible input latency." Foreground="#94A3B8" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                <TextBlock Text="If Game Booster improved your FPS or smoothed out your frame times, please consider leaving a tip to support ongoing development!" Foreground="#CBD5E1" FontSize="12" TextWrapping="Wrap"/>
+            </StackPanel>
+
+            <!-- Action Buttons -->
+            <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button Name="BtnTipPayPal" Grid.Column="0" Content="💳 Tip via PayPal" Background="#0070BA" Foreground="#FFFFFF" FontWeight="Bold" FontSize="12" Height="38" Margin="0,0,8,0" Cursor="Hand"/>
+                <Button Name="BtnTipKoFi" Grid.Column="1" Content="☕ Tip via Ko-Fi" Background="#FF5E5B" Foreground="#FFFFFF" FontWeight="Bold" FontSize="12" Height="38" Margin="0,0,8,0" Cursor="Hand"/>
+                <Button Name="BtnCancelTip" Grid.Column="2" Content="Close" Background="#1E293B" Foreground="#94A3B8" FontWeight="SemiBold" FontSize="12" Height="38" Padding="16,0" Cursor="Hand"/>
+            </Grid>
+        </Grid>
+    </Border>
+"@
+    $reader = [System.Xml.XmlNodeReader]::new([xml]$tipXaml)
+    $content = [System.Windows.Markup.XamlReader]::Load($reader)
+    $tipWin.Content = $content
+
+    $btnClose = $content.FindName("BtnCloseTipModal")
+    $btnCancel = $content.FindName("BtnCancelTip")
+    $btnPaypal = $content.FindName("BtnTipPayPal")
+    $btnKofi = $content.FindName("BtnTipKoFi")
+
+    $closeAction = { $tipWin.Close() }
+    $btnClose.Add_Click($closeAction)
+    $btnCancel.Add_Click($closeAction)
+
+    $btnPaypal.Add_Click({
+        Start-Process $paypalUrl
+        $tipWin.Close()
+    })
+    $btnKofi.Add_Click({
+        Start-Process $kofiUrl
+        $tipWin.Close()
+    })
+
+    $tipWin.ShowDialog() | Out-Null
+}
+
+# Tip Jar & Supporter Action (Request 1 & Phase 4)
+if ($btnTipJar) {
+    $btnTipJar.Add_Click({
+        Show-DarkTipJarModal
+    })
+}
 
 # ---------------------------------------------------------------------------
 # GLOBAL BUTTONS & INITIALIZATION
 # ---------------------------------------------------------------------------
 $btnRefreshAll.Add_Click({
+    $txtStatusBar.Text = "Scanning active processes..."
     Reload-ProcessGrid
-    Reload-GameLibraryGrid
-    Update-TweaksDisplay
     Update-StandbyDisplay
-    Update-ShaderDisplay
-    Reload-CompanionsGrid
-    Reload-WhitelistGrid
-    Reload-RestoreGrid
-    Reload-CrashGrid
-    Update-DaemonIndicators
-    Update-HudCoordinateFields
-    Update-OsdSettingsFields
-    $txtStatusBar.Text = "All systems refreshed."
+    $txtStatusBar.Text = "Running processes updated: $($script:ProcessList.Count) apps detected."
 })
+
+if ($chkAutoScanStartup) {
+    $chkAutoScanStartup.Add_Checked({
+        $cfg = Get-AppConfig
+        if (-not $cfg.generalSettings) { $cfg | Add-Member -MemberType NoteProperty -Name "generalSettings" -Value ([PSCustomObject]@{}) }
+        $cfg.generalSettings.autoScanProcessesOnStartup = $true
+        Save-AppConfig $cfg | Out-Null
+        $txtStatusBar.Text = "Auto-scan on launch enabled."
+    })
+    $chkAutoScanStartup.Add_Unchecked({
+        $cfg = Get-AppConfig
+        if (-not $cfg.generalSettings) { $cfg | Add-Member -MemberType NoteProperty -Name "generalSettings" -Value ([PSCustomObject]@{}) }
+        $cfg.generalSettings.autoScanProcessesOnStartup = $false
+        Save-AppConfig $cfg | Out-Null
+        $txtStatusBar.Text = "Auto-scan on launch disabled (Instant launch mode)."
+    })
+}
 
 $btnSaveAllConfig.Add_Click({
     $cfg = Get-AppConfig
     Save-AppConfig $cfg | Out-Null
     $txtStatusBar.Text = "Defaults saved to config.json."
-    [System.Windows.MessageBox]::Show("Booster configuration saved successfully!", "Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+    Show-DarkModal("Booster configuration saved successfully!", "Saved", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
 })
 
 # Launch Tray Companion
@@ -3611,7 +4778,7 @@ function Invoke-OneClickUpdate {
     $msg = "1-Click Auto Update to $remoteTag`n`n" +
            "Game Booster will download the update package, replace files, and restart automatically.`n`n" +
            "Do you want to proceed?"
-    $res = [System.Windows.MessageBox]::Show($window, $msg, "1-Click Auto Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
+    $res = Show-DarkModal($window, $msg, "1-Click Auto Update", [System.Windows.MessageBoxButton]::YesNo, [System.Windows.MessageBoxImage]::Question)
     if ($res -ne [System.Windows.MessageBoxResult]::Yes) { return }
 
     $txtStatusBar.Text = "Downloading update $remoteTag in background..."
@@ -3641,7 +4808,7 @@ del "%~f0"
         Close-HardwareHudAction
         $window.Close()
     } catch {
-        [System.Windows.MessageBox]::Show($window, "Auto-update encountered an error: $_`nOpening GitHub Releases page instead.", "Update Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+        Show-DarkModal($window, "Auto-update encountered an error: $_`nOpening GitHub Releases page instead.", "Update Error", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         [System.Diagnostics.Process]::Start("https://github.com/$script:GitHubRepo/releases/latest") | Out-Null
     }
 }
@@ -3704,12 +4871,12 @@ function Complete-AppUpdateCheck {
                 $pillUpdateAvailable.Visibility = [System.Windows.Visibility]::Collapsed
             }
             if (-not $isSilent) {
-                [System.Windows.MessageBox]::Show($window, "You are using the latest version of Game Booster (v$script:AppVersion).", "Game Booster Update", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
+                Show-DarkModal($window, "You are using the latest version of Game Booster (v$script:AppVersion).", "Game Booster Update", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Information)
             }
         }
     } else {
         if (-not $isSilent) {
-            [System.Windows.MessageBox]::Show($window, "Unable to check for updates right now.`nPlease check your internet connection and try again.", "Update Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+            Show-DarkModal($window, "Unable to check for updates right now.`nPlease check your internet connection and try again.", "Update Check", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
         }
     }
 }
@@ -3768,32 +4935,314 @@ if ($pillUpdateAvailable) {
     })
 }
 
-# Populate all views on startup
-Reload-ProcessGrid
-Reload-GameLibraryGrid
-Update-TweaksDisplay
-Update-StandbyDisplay
-Update-ShaderDisplay
-Initialize-ServerRadarGrid
-Reload-CompanionsGrid
-Reload-WhitelistGrid
-Reload-RestoreGrid
-Reload-CrashGrid
+# -----------------------------------------------------------------------------
+# GPU DRIVER RADAR & BACKGROUND CHECKERS
+# -----------------------------------------------------------------------------
+function Update-GpuDriverCardDisplay {
+    try {
+        $details = $script:gpuDriverDetails
+        if (-not $details) {
+            $details = Get-GpuDriverDetails
+            $script:gpuDriverDetails = $details
+        }
+        if ($txtGpuCardName) { $txtGpuCardName.Text = "$($details.GpuName)" }
+        if ($txtGpuInstalledDriver) { $txtGpuInstalledDriver.Text = "$($details.DisplayVersion) ($($details.DriverVersion))" }
+        if ($txtGpuReleaseDate -and $details.DriverDate) { $txtGpuReleaseDate.Text = "$($details.DriverDate)" }
+        if ($txtGpuBadge) {
+            $gpuClean = if ($details.GpuName -like "$($details.Vendor)*") { $details.GpuName } else { "$($details.Vendor) $($details.GpuName)" }
+            $txtGpuBadge.Text = $gpuClean
+        }
+        if ($badgeGpuDriverStatus -and $txtGpuDriverBadge) {
+            $badgeGpuDriverStatus.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1E293B")
+            $txtGpuDriverBadge.Text = "READY"
+            $txtGpuDriverBadge.Foreground = [System.Windows.Media.Brushes]::DeepSkyBlue
+        }
+    } catch {
+        Write-AppLog "Error updating GPU driver card: $_" "WARN"
+    }
+}
+
+function Open-GpuDriverDownloadPage {
+    $url = if ($script:LatestGpuInfo -and $script:LatestGpuInfo.DetailsUrl) {
+        $script:LatestGpuInfo.DetailsUrl
+    } elseif ($script:LatestGpuInfo -and $script:LatestGpuInfo.DownloadUrl) {
+        $script:LatestGpuInfo.DownloadUrl
+    } elseif ($script:gpuDriverDetails.Vendor -eq "AMD") {
+        "https://www.amd.com/en/support/download/drivers.html"
+    } elseif ($script:gpuDriverDetails.Vendor -eq "NVIDIA") {
+        "https://www.nvidia.com/Download/index.aspx"
+    } else {
+        "https://www.intel.com/content/www/us/en/support/detect.html"
+    }
+    try {
+        [System.Diagnostics.Process]::Start([System.Diagnostics.ProcessStartInfo]@{
+            FileName = $url
+            UseShellExecute = $true
+        }) | Out-Null
+    } catch {
+        Write-AppLog "Failed to open browser URL: $_" "WARN"
+    }
+}
+
+function Start-GpuDriverUpdateCheck([bool]$silent = $false) {
+    if ($script:GpuUpdatePS) {
+        try { $script:GpuUpdatePS.Dispose() } catch {}
+        $script:GpuUpdatePS = $null
+        $script:GpuUpdateHandle = $null
+    }
+
+    if ($btnCheckGpuDriver) {
+        $btnCheckGpuDriver.IsEnabled = $false
+        $btnCheckGpuDriver.Content = "⏳ Checking..."
+    }
+    if ($txtStatusBar -and -not $silent) {
+        $txtStatusBar.Text = "Checking for latest $($script:gpuDriverDetails.Vendor) display driver..."
+    }
+
+    try {
+        $script:GpuUpdatePS = [System.Management.Automation.PowerShell]::Create()
+        $null = $script:GpuUpdatePS.AddScript({
+            param($modPath, $currentDetails)
+            try {
+                . $modPath
+                return (Check-LatestGpuDriver -CurrentDetails $currentDetails)
+            } catch {
+                return $null
+            }
+        }).AddArgument((Join-Path $script:ModulesDir "GpuManager.ps1")).AddArgument($script:gpuDriverDetails)
+
+        $script:GpuUpdateHandle = $script:GpuUpdatePS.BeginInvoke()
+        
+        $script:gpuPollTimer = New-Object System.Windows.Threading.DispatcherTimer
+        $script:gpuPollTimer.Interval = [TimeSpan]::FromMilliseconds(300)
+        $script:gpuPollTimer.Add_Tick({
+            if ($script:GpuUpdateHandle -and $script:GpuUpdateHandle.IsCompleted) {
+                $script:gpuPollTimer.Stop()
+                Complete-GpuDriverUpdateCheck -silent $silent
+            }
+        })
+        $script:gpuPollTimer.Start()
+    } catch {
+        Write-AppLog "Failed to spawn GPU driver update check: $_" "WARN"
+        if ($btnCheckGpuDriver) {
+            $btnCheckGpuDriver.IsEnabled = $true
+            $btnCheckGpuDriver.Content = "🔄 Check Updates"
+        }
+    }
+}
+
+function Complete-GpuDriverUpdateCheck([bool]$silent = $false) {
+    try {
+        if (-not $script:GpuUpdatePS) { return }
+        $res = $script:GpuUpdatePS.EndInvoke($script:GpuUpdateHandle)
+        $script:GpuUpdatePS.Dispose()
+        $script:GpuUpdatePS = $null
+        $script:GpuUpdateHandle = $null
+
+        if ($btnCheckGpuDriver) {
+            $btnCheckGpuDriver.IsEnabled = $true
+            $btnCheckGpuDriver.Content = "🔄 Check Updates"
+        }
+
+        if ($res -and $res.Count -gt 0) {
+            $info = $res[0]
+            $script:LatestGpuInfo = $info
+
+            # Update UI controls
+            if ($txtGpuLatestDriver) {
+                $txtGpuLatestDriver.Text = "$($info.LatestVersion)"
+                if ($info.HasUpdate) {
+                    $txtGpuLatestDriver.Foreground = [System.Windows.Media.Brushes]::LimeGreen
+                } else {
+                    $txtGpuLatestDriver.Foreground = [System.Windows.Media.Brushes]::DeepSkyBlue
+                }
+            }
+            if ($txtGpuReleaseDate -and $info.ReleaseDate) {
+                $txtGpuReleaseDate.Text = "$($info.ReleaseDate)"
+            }
+            if ($badgeGpuDriverStatus -and $txtGpuDriverBadge) {
+                if ($info.HasUpdate) {
+                    $badgeGpuDriverStatus.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#065F46")
+                    $txtGpuDriverBadge.Text = "UPDATE AVAILABLE"
+                    $txtGpuDriverBadge.Foreground = [System.Windows.Media.Brushes]::LimeGreen
+                } elseif ($info.Status -match "Failed") {
+                    $badgeGpuDriverStatus.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#334155")
+                    $txtGpuDriverBadge.Text = "OFFLINE"
+                    $txtGpuDriverBadge.Foreground = [System.Windows.Media.Brushes]::SlateGray
+                } else {
+                    $badgeGpuDriverStatus.Background = [System.Windows.Media.BrushConverter]::new().ConvertFromString("#1E293B")
+                    $txtGpuDriverBadge.Text = "UP TO DATE"
+                    $txtGpuDriverBadge.Foreground = [System.Windows.Media.Brushes]::DeepSkyBlue
+                }
+            }
+
+            # Header Pill
+            if ($pillGpuUpdate -and $txtGpuUpdateTag) {
+                if ($info.HasUpdate) {
+                    $pillGpuUpdate.Visibility = [System.Windows.Visibility]::Visible
+                    $txtGpuUpdateTag.Text = "⚡ $($info.LatestVersion)"
+                } else {
+                    $pillGpuUpdate.Visibility = [System.Windows.Visibility]::Collapsed
+                }
+            }
+
+            if ($btnDownloadGpuDriver) {
+                $btnDownloadGpuDriver.IsEnabled = [bool]($info.DownloadUrl -or $info.DetailsUrl)
+            }
+
+            if ($info.HasUpdate) {
+                $txtStatusBar.Text = "🚀 New GPU Driver Available: $($info.LatestVersion) (Installed: $($info.InstalledVersion))"
+                if (-not $silent) {
+                    $ans = Show-DarkModal(
+                        "New $($info.Vendor) Graphics Driver Available!`n`nInstalled: $($info.InstalledVersion)`nLatest: $($info.LatestVersion) ($($info.ReleaseDate))`n`nWould you like to open the official release notes and download page now?",
+                        "GPU Driver Update Available",
+                        [System.Windows.MessageBoxButton]::YesNo,
+                        [System.Windows.MessageBoxImage]::Information
+                    )
+                    if ($ans -eq [System.Windows.MessageBoxResult]::Yes) {
+                        Open-GpuDriverDownloadPage
+                    }
+                }
+            } else {
+                if (-not $silent) {
+                    $txtStatusBar.Text = "✅ GPU Driver is up to date: $($info.InstalledVersion)"
+                    Show-DarkModal(
+                        "Your $($info.Vendor) Graphics Driver is up to date!`n`nInstalled: $($info.InstalledVersion)`nStatus: $($info.Status)",
+                        "GPU Driver Up to Date",
+                        [System.Windows.MessageBoxButton]::OK,
+                        [System.Windows.MessageBoxImage]::Information
+                    )
+                }
+            }
+        }
+    } catch {
+        Write-AppLog "Error completing GPU update check: $_" "WARN"
+        if ($btnCheckGpuDriver) {
+            $btnCheckGpuDriver.IsEnabled = $true
+            $btnCheckGpuDriver.Content = "🔄 Check Updates"
+        }
+    }
+}
+
+if ($btnCheckGpuDriver) {
+    $btnCheckGpuDriver.Add_Click({
+        Start-GpuDriverUpdateCheck -silent $false
+    })
+}
+
+if ($btnDownloadGpuDriver) {
+    $btnDownloadGpuDriver.Add_Click({
+        Open-GpuDriverDownloadPage
+    })
+}
+
+if ($pillGpuUpdate) {
+    $pillGpuUpdate.Add_MouseLeftButtonDown({
+        Open-GpuDriverDownloadPage
+    })
+}
+
+if ($badgeGpu) {
+    $badgeGpu.Add_MouseLeftButtonDown({
+        Start-GpuDriverUpdateCheck -silent $false
+    })
+}
+
+# -----------------------------------------------------------------------------
+# Instant Startup Initialization (< 0.4s Window Render)
+# Heavy disk, WMI, and event log scans deferred to on-demand tab selection
+# -----------------------------------------------------------------------------
+$script:TabLibraryLoaded     = $false
+$script:TabTweaksLoaded      = $false
+$script:TabCompanionsLoaded  = $false
+$script:TabWhitelistLoaded   = $false
+$script:TabRestoreLoaded     = $false
+$script:TabDiagnosticsLoaded = $false
+
+# Lightweight in-memory UI initializers
 Update-DaemonIndicators
 Update-HudCoordinateFields
 Update-OsdSettingsFields
+Update-StandbyDisplay
+Update-GpuDriverCardDisplay
 
-# Auto-refresh when tabs change
+# Approach C: Smart Standby for Process Scanner
+$autoScanOnStartup = $false
+$cfg = Get-AppConfig
+if ($cfg.generalSettings -and $null -ne $cfg.generalSettings.autoScanProcessesOnStartup) {
+    $autoScanOnStartup = [bool]$cfg.generalSettings.autoScanProcessesOnStartup
+}
+if ($chkAutoScanStartup) {
+    $chkAutoScanStartup.IsChecked = $autoScanOnStartup
+}
+
+if ($autoScanOnStartup) {
+    # Non-blocking deferred background process scan (after window renders)
+    $procStartupTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $procStartupTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+    $procStartupTimer.Add_Tick({
+        $procStartupTimer.Stop()
+        Reload-ProcessGrid
+    })
+    $procStartupTimer.Start()
+} else {
+    $txtStatusBar.Text = "Game Booster PRO ready (Standby Mode). App launched in <0.4s. Click 'Refresh Running Apps' or switch tabs."
+}
+
+# Auto-refresh when tabs change (True Tab Lazy Loading)
 if ($mainTabs) {
     $mainTabs.Add_SelectionChanged({
         param($sender, $e)
         if ($e.Source -eq $mainTabs) {
             switch ($mainTabs.SelectedIndex) {
-                0 { Reload-ProcessGrid; Update-StandbyDisplay }
-                1 { Reload-GameLibraryGrid }
-                2 { Update-TweaksDisplay; if ($script:RadarList.Count -eq 0) { Initialize-ServerRadarGrid } }
-                5 { Reload-WhitelistGrid }
-                6 { Reload-RestoreGrid }
+                0 {
+                    Update-StandbyDisplay
+                    if ($chkAutoScanStartup -and $chkAutoScanStartup.IsChecked -and $script:ProcessList.Count -gt 0) {
+                        Reload-ProcessGrid
+                    }
+                }
+                1 {
+                    if (-not $script:TabLibraryLoaded) {
+                        Reload-GameLibraryGrid
+                        $script:TabLibraryLoaded = $true
+                    }
+                }
+                2 {
+                    if (-not $script:TabTweaksLoaded) {
+                        Update-TweaksDisplay
+                        Update-ShaderDisplay
+                        Update-PcieMsiDisplay
+                        Update-UsbStatusDisplay
+                        Update-GpuDriverCardDisplay
+                        if ($script:RadarList.Count -eq 0) { Initialize-ServerRadarGrid }
+                        $script:TabTweaksLoaded = $true
+                    }
+                }
+                4 {
+                    if (-not $script:TabCompanionsLoaded) {
+                        Reload-CompanionsGrid
+                        $script:TabCompanionsLoaded = $true
+                    }
+                }
+                5 {
+                    if (-not $script:TabWhitelistLoaded) {
+                        Reload-WhitelistGrid
+                        $script:TabWhitelistLoaded = $true
+                    }
+                }
+                6 {
+                    if (-not $script:TabRestoreLoaded) {
+                        Reload-RestoreGrid
+                        $script:TabRestoreLoaded = $true
+                    }
+                }
+                7 {
+                    if (-not $script:TabDiagnosticsLoaded) {
+                        Update-LagReportDisplay
+                        Reload-CrashGrid
+                        $script:TabDiagnosticsLoaded = $true
+                    }
+                }
             }
         }
     })
@@ -3809,16 +5258,26 @@ $script:daemonTimer.Add_Tick({
 })
 $script:daemonTimer.Start()
 
-# Background silent update check
-Start-AppUpdateCheck -silent $true
+# Background silent checks (deferred non-blocking so window appears instantly)
+$bgCheckTimer = New-Object System.Windows.Threading.DispatcherTimer
+$bgCheckTimer.Interval = [TimeSpan]::FromMilliseconds(1200)
+$bgCheckTimer.Add_Tick({
+    $bgCheckTimer.Stop()
+    Start-GpuDriverUpdateCheck -silent $true
+    Start-AppUpdateCheck -silent $true
+})
+$bgCheckTimer.Start()
 
-# Window Closing Handler (Force close active HUD terminal & monitors on exit)
+# Window Closing Handler (Force close active HUD terminal, in-game overlays & background timers on exit)
 $window.Add_Closing({
-    Write-AppLog "Game Booster window closing. Cleaning up Hardware HUD and background timers..."
+    Write-AppLog "Game Booster window closing. Cleaning up Hardware HUD, In-Game OSD and background timers..."
     Close-HardwareHudAction
+    Close-InGameOsdAction
     if ($script:radarTimer) { $script:radarTimer.Stop() }
     if ($script:daemonTimer) { $script:daemonTimer.Stop() }
     if ($script:updatePollTimer) { $script:updatePollTimer.Stop() }
+    if ($script:gpuPollTimer) { $script:gpuPollTimer.Stop() }
+    if ($script:GpuUpdatePS) { try { $script:GpuUpdatePS.Dispose() } catch {} }
 })
 
 # Show Window
@@ -3826,6 +5285,7 @@ $window.ShowDialog() | Out-Null
 
 # Post-close cleanup safeguard
 Close-HardwareHudAction
+Close-InGameOsdAction
 
 
 

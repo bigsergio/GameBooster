@@ -3,6 +3,10 @@
 *.pid
 gamebooster.log
 tray.pid
+watcher.pid
+hud_session.json
+restore_state.json
+lag_report_latest.json
 
 # Session state
 last_session.json

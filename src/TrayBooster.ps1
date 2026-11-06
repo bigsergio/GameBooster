@@ -45,7 +45,7 @@ public class HotKeyHandler : NativeWindow {
     [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
     [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-    public event Action HotKeyPressed;
+    public event Action<int> HotKeyPressed;
     private const int WM_HOTKEY = 0x0312;
 
     public HotKeyHandler() {
@@ -55,7 +55,7 @@ public class HotKeyHandler : NativeWindow {
     protected override void WndProc(ref Message m) {
         if (m.Msg == WM_HOTKEY) {
             if (HotKeyPressed != null) {
-                HotKeyPressed();
+                HotKeyPressed((int)m.WParam);
             }
         }
         base.WndProc(ref m);
@@ -111,16 +111,38 @@ function Focus-Or-OpenGui {
 }
 
 $hotkey = New-Object HotKeyHandler
-# MOD_CONTROL = 0x0002. VK_F11 = 0x7A. Hotkey ID = 1001
+# MOD_CONTROL = 0x0002. VK_F11 = 0x7A. Hotkey ID = 1001 (HUD)
+# MOD_NONE = 0x0000. VK_F10 = 0x79. Hotkey ID = 1002 (OSD)
 [HotKeyHandler]::RegisterHotKey($hotkey.Handle, 1001, 0x0002, 0x7A) | Out-Null
+[HotKeyHandler]::RegisterHotKey($hotkey.Handle, 1002, 0x0000, 0x79) | Out-Null
 
 $hotkey.add_HotKeyPressed({
-    # Toggle/Launch HUD on Ctrl+F11
-    $hudPs = Join-Path $ScriptDir "Launch_Gaming_HUD.ps1"
-    if (Test-Path $hudPs) {
-        Write-TrayLog "Ctrl+F11 pressed: Toggling Hardware Telemetry HUD."
-        $notifyIcon.ShowBalloonTip(1500, "Hardware HUD (Ctrl+F11)", "Toggling Gaming Telemetry HUD...", [System.Windows.Forms.ToolTipIcon]::Info)
-        Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$hudPs`""
+    param([int]$hotkeyId)
+    if ($hotkeyId -eq 1001) {
+        # Toggle/Launch HUD on Ctrl+F11
+        $hudPs = Join-Path $ScriptDir "Launch_Gaming_HUD.ps1"
+        if (-not (Test-Path $hudPs)) { $hudPs = Join-Path $RootDir "src\Launch_Gaming_HUD.ps1" }
+        if (Test-Path $hudPs) {
+            Write-TrayLog "Ctrl+F11 pressed: Toggling Hardware Telemetry HUD."
+            $notifyIcon.ShowBalloonTip(1500, "Hardware HUD (Ctrl+F11)", "Toggling Gaming Telemetry HUD...", [System.Windows.Forms.ToolTipIcon]::Info)
+            Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$hudPs`""
+        }
+    } elseif ($hotkeyId -eq 1002) {
+        # Toggle In-Game OSD on F10
+        $osdProc = Get-CimInstance Win32_Process -Filter "CommandLine LIKE '%InGameOverlay.ps1%'" -ErrorAction SilentlyContinue
+        if ($osdProc) {
+            $osdProc | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+            Write-TrayLog "F10 pressed: In-Game OSD Closed."
+            $notifyIcon.ShowBalloonTip(1500, "In-Game OSD (F10)", "OSD Overlay Closed.", [System.Windows.Forms.ToolTipIcon]::Info)
+        } else {
+            $osdPs = Join-Path $ScriptDir "InGameOverlay.ps1"
+            if (-not (Test-Path $osdPs)) { $osdPs = Join-Path $RootDir "src\InGameOverlay.ps1" }
+            if (Test-Path $osdPs) {
+                Write-TrayLog "F10 pressed: Launching In-Game OSD."
+                $notifyIcon.ShowBalloonTip(1500, "In-Game OSD (F10)", "Launching In-Game OSD Overlay...", [System.Windows.Forms.ToolTipIcon]::Info)
+                Start-Process $PSHostExe -ArgumentList "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", "`"$osdPs`""
+            }
+        }
     }
 })
 

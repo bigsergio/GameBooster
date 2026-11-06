@@ -16,6 +16,15 @@ $ScriptDir = if ($PSScriptRoot) { $PSScriptRoot } elseif ($MyInvocation.MyComman
 $RootDir = if (Test-Path (Join-Path $ScriptDir "config.json")) { $ScriptDir } else { Split-Path -Parent $ScriptDir }
 $ConfigFile = Join-Path $RootDir "config.json"
 
+# Load Frame Telemetry Module for live FPS / 1% Lows
+$telemMod = Join-Path (Join-Path $RootDir "src\Modules") "FrameTelemetry.ps1"
+if (-not (Test-Path $telemMod) -and (Test-Path (Join-Path $ScriptDir "Modules\FrameTelemetry.ps1"))) {
+    $telemMod = Join-Path $ScriptDir "Modules\FrameTelemetry.ps1"
+}
+if (Test-Path $telemMod) {
+    try { . $telemMod } catch {}
+}
+
 # Win32 Helpers for Click-Through & Always On Top
 Add-Type @"
 using System;
@@ -43,7 +52,7 @@ public class OsdWin32 {
 [xml]$xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Game Booster v1.2.2 In-Game OSD" Height="42" SizeToContent="Width" MinWidth="380"
+        Title="Game Booster PRO v2.0 In-Game OSD" Height="42" SizeToContent="Width" MinWidth="380"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         Topmost="True" ShowInTaskbar="False" WindowStartupLocation="Manual">
     <Border Name="OsdBorder" Background="#D90B0F19" BorderBrush="#0284C7" BorderThickness="1.5" CornerRadius="8" Padding="12,6">
@@ -66,13 +75,21 @@ public class OsdWin32 {
 
             <!-- Metrics Bar -->
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- FPS -->
+                <TextBlock Text="FPS:" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" Margin="0,0,3,0"/>
+                <TextBlock Name="TxtFps" Text="--" Foreground="#10B981" FontSize="11" FontWeight="ExtraBold" Margin="0,0,8,0"/>
+
+                <!-- 1% LOW -->
+                <TextBlock Text="1% LOW:" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" Margin="0,0,3,0"/>
+                <TextBlock Name="TxtLow1" Text="--" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" Margin="0,0,10,0"/>
+
                 <!-- CPU -->
                 <TextBlock Text="CPU:" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" Margin="0,0,3,0"/>
                 <TextBlock Name="TxtCpu" Text="--%" Foreground="#38BDF8" FontSize="11" FontWeight="Bold" Margin="0,0,10,0"/>
 
                 <!-- RAM -->
                 <TextBlock Text="RAM:" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" Margin="0,0,3,0"/>
-                <TextBlock Name="TxtRam" Text="-- GB" Foreground="#10B981" FontSize="11" FontWeight="Bold" Margin="0,0,10,0"/>
+                <TextBlock Name="TxtRam" Text="-- GB" Foreground="#A78BFA" FontSize="11" FontWeight="Bold" Margin="0,0,10,0"/>
 
                 <!-- PING -->
                 <TextBlock Text="PING:" Foreground="#94A3B8" FontSize="11" FontWeight="SemiBold" Margin="0,0,3,0"/>
@@ -91,11 +108,19 @@ $window = [System.Windows.Markup.XamlReader]::Load($reader)
 
 # Controls
 $txtBrand   = $window.FindName("TxtBrand")
+$txtFps     = $window.FindName("TxtFps")
+$txtLow1    = $window.FindName("TxtLow1")
 $txtCpu     = $window.FindName("TxtCpu")
 $txtRam     = $window.FindName("TxtRam")
 $txtPing    = $window.FindName("TxtPing")
 $txtModeTag = $window.FindName("TxtModeTag")
 $osdBorder  = $window.FindName("OsdBorder")
+
+# Import Modules if available
+$modulesDir = Join-Path $RootDir "src\Modules"
+if (Test-Path (Join-Path $modulesDir "FrameTelemetry.ps1")) {
+    try { . (Join-Path $modulesDir "FrameTelemetry.ps1") } catch {}
+}
 
 # Load Configuration
 $cfg = if (Test-Path $ConfigFile) {
@@ -109,33 +134,59 @@ if ($cfg.overlaySettings -and $cfg.overlaySettings.titleText) {
     $txtBrand.Text = "GAME BOOSTER"
 }
 
-# Position Screen Calculation
-$screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-$posSetting = if ($cfg.overlaySettings -and $cfg.overlaySettings.position) { $cfg.overlaySettings.position } else { "TopRight" }
+# Position Screen Calculation with Dynamic Multi-Monitor Clamping
+function Update-OsdPosition {
+    $screen = [System.Windows.Forms.Screen]::PrimaryScreen.WorkingArea
+    $w = if ($window.ActualWidth -gt 50) { $window.ActualWidth } else { 620 }
+    $h = if ($window.ActualHeight -gt 20) { $window.ActualHeight } else { 42 }
+    $posSetting = if ($cfg.overlaySettings -and $cfg.overlaySettings.position) { $cfg.overlaySettings.position } else { "TopRight" }
 
-switch ($posSetting) {
-    "TopLeft" {
+    if ($cfg.overlaySettings -and $null -ne $cfg.overlaySettings.customX -and $null -ne $cfg.overlaySettings.customY -and [int]$cfg.overlaySettings.customX -gt 0) {
+        $window.Left = [Math]::Max($screen.Left + 10, [Math]::Min($screen.Right - $w - 10, [int]$cfg.overlaySettings.customX))
+        $window.Top  = [Math]::Max($screen.Top + 10,  [Math]::Min($screen.Bottom - $h - 10, [int]$cfg.overlaySettings.customY))
+        return
+    }
+
+    switch ($posSetting) {
+        "TopLeft" {
+            $window.Left = $screen.Left + 25
+            $window.Top  = $screen.Top + 25
+        }
+        "BottomLeft" {
+            $window.Left = $screen.Left + 25
+            $window.Top  = $screen.Bottom - $h - 25
+        }
+        "BottomRight" {
+            $window.Left = $screen.Right - $w - 25
+            $window.Top  = $screen.Bottom - $h - 25
+        }
+        "TopCenter" {
+            $window.Left = ($screen.Left + $screen.Right - $w) / 2
+            $window.Top  = $screen.Top + 25
+        }
+        default {
+            # TopRight
+            $window.Left = $screen.Right - $w - 25
+            $window.Top  = $screen.Top + 25
+        }
+    }
+
+    # Strict multi-monitor containment clamp (never bleed into secondary display):
+    if (($window.Left + $w) -gt ($screen.Right - 15)) {
+        $window.Left = $screen.Right - $w - 25
+    }
+    if ($window.Left -lt ($screen.Left + 15)) {
         $window.Left = $screen.Left + 25
-        $window.Top = $screen.Top + 25
-    }
-    "BottomLeft" {
-        $window.Left = $screen.Left + 25
-        $window.Top = $screen.Bottom - 65
-    }
-    "BottomRight" {
-        $window.Left = $screen.Right - 450
-        $window.Top = $screen.Bottom - 65
-    }
-    "TopCenter" {
-        $window.Left = ($screen.Left + $screen.Right) / 2 - 200
-        $window.Top = $screen.Top + 25
-    }
-    default {
-        # TopRight
-        $window.Left = $screen.Right - 450
-        $window.Top = $screen.Top + 25
     }
 }
+
+# Initial estimation layout
+Update-OsdPosition
+
+# Precise re-alignment once fully rendered
+$window.Add_ContentRendered({
+    Update-OsdPosition
+})
 
 # Performance Counter & Ping Helpers
 $ping = New-Object System.Net.NetworkInformation.Ping
@@ -175,6 +226,18 @@ $timer.Add_Tick({
         if ($null -ne $cpuLoad) {
             $txtCpu.Text = "$([int]$cpuLoad)%"
             $txtCpu.Foreground = if ($cpuLoad -gt 80) { "#EF4444" } else { "#38BDF8" }
+        }
+    } catch {}
+
+    # Update Live FPS & 1% Lows
+    try {
+        if (Get-Command Get-LiveFrameTelemetry -ErrorAction SilentlyContinue) {
+            $ft = Get-LiveFrameTelemetry
+            if ($ft.AvgFps -gt 0) {
+                $txtFps.Text = "$([int]$ft.AvgFps)"
+                $txtLow1.Text = "$([int]$ft.Low1PercentFps)"
+                $txtFps.Foreground = if ($ft.AvgFps -ge 120) { "#10B981" } elseif ($ft.AvgFps -ge 60) { "#38BDF8" } else { "#EF4444" }
+            }
         }
     } catch {}
 })

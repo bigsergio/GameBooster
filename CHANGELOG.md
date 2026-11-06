@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [2.0.0-Beta] - 2026-10-22
+
+### 🏗️ Complete Modular Architecture (`src/Modules/`)
+- **Decoupled Architecture:** Deconstructed the monolithic script into isolated, maintainable modules:
+  - `CpuOptimizer.ps1` — Win32 process priorities, EcoQoS, and thread scheduling.
+  - `DarkDialog.ps1` — Universal dark cyberpunk WPF modal dialogs.
+  - `DisplayManager.ps1` — Win32 display mode switching and refresh rate locking.
+  - `FrameTelemetry.ps1` — Real-time FPS, 1% Low, and 0.1% Low frametime jitter calculations.
+  - `GamingLockout.ps1` — Windows key and Sticky Keys lockouts during competitive play.
+  - `GpuManager.ps1` — Dynamic GPU vendor hardware detection and driver whitelist protection.
+  - `HardwareTweaks.ps1` — PCIe MSI mode and USB selective suspend optimizations.
+  - `LagAnalyzer.ps1` — Post-game stutter culprit analysis and smoothness scoring.
+  - `LibraryScanner.ps1` — Multi-platform game library scanner (Steam, Battle.net, Epic, Ubisoft, Xbox).
+  - `MemoryPurge.ps1` — Win32 standby cache purging and launcher working set trimming.
+  - `NetworkQoS.ps1` — DSCP 46 expedited gaming packet tagging.
+  - `PerGameProfiles.ps1` — Customized CPU affinity, priority, and companion app profiles per game.
+  - `ProBalance.ps1` — Background process throttling to Efficiency cores.
+  - `ServerRadar.ps1` — Global gaming datacenter latency and jitter radar.
+  - `ShaderCleaner.ps1` — Multi-vendor shader cache cleanup engine.
+  - `SystemTweaks.ps1` — Low-latency Windows subsystem optimizations (0.5ms timer, MPO, HAGS).
+  - `Watchdog.ps1` — Crash recovery and session state restoration.
+
+### 🎯 100% Anti-Cheat Safe In-Game OSD (On-Screen Display)
+- **Zero DLL Injection:** Ultra-fast, click-through hardware telemetry overlay using native Windows layered windows (`WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW`).
+- **Telemetry Bar:** Displays live **FPS**, **1% Low Frametimes**, **CPU%**, **RAM Usage**, and **Ping (ms)** with 0% anti-cheat detection risk.
+- **Customization:** Configurable streamer/clan brand tag, screen positioning (Top-Right, Top-Left, Bottom-Right, Bottom-Left), and `Ctrl+Shift+O` toggle shortcut.
+
+### 🖥️ Secondary Desktop Hardware HUD
+- **Terminal-Based Telemetry:** Docks `btop4win` + `bottom` + live ping graph onto secondary displays.
+- **Preset Configurations:** Tri-Pane Balanced, Esports Ping Focused, and Minimal Dual-Pane layouts.
+- **Pixel-Accurate Snapping:** Windows Terminal geometry coordinates saved and snapped automatically via native Win32 `SetWindowPos`.
+
+### ⚖️ ProBalance EcoQoS & Reverse Affinity Engine
+- **Core Isolation:** Dynamically siloes background launchers (Steam, Battle.net, Discord, Chrome, Epic) to Efficiency cores (`0xF000`) and EcoQoS (`IDLE_PRIORITY_CLASS`).
+- **Zero Game Contention:** Guarantees 100% of Performance cores and memory bandwidth to the running game process.
+
+### 🎮 Multiplane Overlay (MPO Fix) & Multi-Vendor Shader Cache Manager
+- **MPO Manager:** Detects and toggles Windows DWM Multiplane Overlay (`OverlayTestMode = 5`) to resolve GPU driver stutter.
+- **Shader Cache Cleaner:** One-click purging of DirectX (D3DSCache), AMD (DxCache), NVIDIA (NV_Cache), Intel, and Steam pipeline caches.
+
+### 🚀 Autonomous ETW Game Watcher & Auto-Restore
+- **Event-Driven Watcher:** Background daemon monitors game start and exit events via ETW/Win32 without CPU polling.
+- **Automatic Recovery:** Automatically restores power schemes, timers, and closed background applications upon game exit.
+
+---
+
 ## [1.2.2] - 2026-10-20
 
 ### ⚡ PowerShell 7 Runtime Engine Detection & 1-Click Upgrade

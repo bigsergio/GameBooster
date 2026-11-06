@@ -47,8 +47,12 @@ $dvrOpt = ($gameDvr -eq 0 -or $gameDvr -eq $null)
 Report-Check "Background Game DVR Recording" $(if ($dvrOpt) { "Disabled (0% GPU Encoding Overhead)" } else { "Enabled (Consuming GPU Encoders!)" }) $dvrOpt "Disable Background Recording in Windows Settings > Gaming > Captures to reclaim GPU VRAM."
 
 # 4. Active Power Plan
-$activePlan = (powercfg -getactivescheme 2>$null)
-$isPerfPlan = ($activePlan -match "Ultimate|High Performance")
+$isPerfPlan = $false
+try {
+    $activeGuid = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes" -ErrorAction SilentlyContinue).ActivePowerScheme
+    $schemeProp = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$activeGuid" -ErrorAction SilentlyContinue
+    if ($schemeProp.FriendlyName -like "*Ultimate*" -or $schemeProp.FriendlyName -like "*High*") { $isPerfPlan = $true }
+} catch {}
 Report-Check "Current Windows Power Plan" $(if ($isPerfPlan) { "High / Ultimate Performance" } else { "Balanced (Game Booster switches this during Game Mode)" }) $true ""
 
 # 5. Standby RAM Fragmentation

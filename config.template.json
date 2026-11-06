@@ -1,4 +1,5 @@
 {
+  "version": "2.0.0",
   "whitelist": [
     "Steam",
     "steamwebhelper",
@@ -98,7 +99,11 @@
     "smartscreen",
     "DefenderSessionHelper",
     "Antigravity",
-    "language_server"
+    "language_server",
+    "portmaster",
+    "portmaster-core",
+    "safing-portmaster",
+    "PortmasterCore"
   ],
   "hardwareKeep": [
     "RTSS",
@@ -110,7 +115,6 @@
   ],
   "selectedByDefault": [
     "SamsungMagician",
-    "portmaster",
     "GWIdlMon",
     "SignID",
     "GWCrashpadHandler",
@@ -161,11 +165,12 @@
     "position": "TopRight",
     "toggleHotkey": "Ctrl+Shift+O",
     "opacity": 0.85,
-    "titleText": "GAME BOOSTER"
+    "titleText": "GAME BOOSTER v2"
   },
   "watcherSettings": {
     "monitoredGames": [],
-    "autoRestoreOnGameExit": true
+    "autoRestoreOnGameExit": true,
+    "useEtwEventWatcher": true
   },
   "autoStartWith": {
     "enabled": true,
@@ -183,6 +188,25 @@
   "tweaksSettings": {
     "auto05msTimer": true,
     "autoPurgeStandbyOnBoost": true,
+    "autoWorkingSetTrim": true,
+    "autoPowerSchemeSwitch": true,
+    "gamingLockoutWinKey": false,
+    "gamingLockoutStickyKeys": true,
+    "enableDynamicQos": true,
+    "enableProBalanceEcoQoS": true,
+    "enableReverseAffinity": true,
+    "disableUsbSelectiveSuspend": true,
     "autoCpuAffinity": true
+  },
+  "supporterSettings": {
+    "showSupporterBadge": true,
+    "donationLinks": {
+      "kofi": "https://ko-fi.com/psoferreira",
+      "github": "https://github.com/sponsors/bigsergio",
+      "paypal": "https://www.paypal.com/paypalme/psoferreira"
+    }
+  },
+  "generalSettings": {
+    "autoScanProcessesOnStartup": false
   }
 }

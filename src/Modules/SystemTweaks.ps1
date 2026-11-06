@@ -1,6 +1,6 @@
 ﻿# ============================================================================
-# Game Booster v1.0 - Module: 1-Click Windows Gaming Tweaks
-# Timer Resolution, HAGS, Game Mode, TCP NoDelay, & Power Scheme Optimization
+# Game Booster PRO v2.0 - Module: 1-Click Windows Gaming Tweaks
+# Timer Resolution, HAGS, MPO, Game Mode, TCP NoDelay, & Dynamic Power Scheme
 # ============================================================================
 
 Add-Type @"
@@ -27,6 +27,35 @@ public class HighPrecisionTimer {
         return cur;
     }
 }
+
+public class NativePower {
+    [DllImport("powrprof.dll")]
+    public static extern uint PowerGetActiveScheme(IntPtr UserRootPowerKey, out IntPtr pSchemeGuid);
+
+    [DllImport("powrprof.dll")]
+    public static extern uint PowerSetActiveScheme(IntPtr UserRootPowerKey, ref Guid SchemeGuid);
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr LocalFree(IntPtr hMem);
+
+    public static string GetActiveGuid() {
+        IntPtr pGuid;
+        if (PowerGetActiveScheme(IntPtr.Zero, out pGuid) == 0 && pGuid != IntPtr.Zero) {
+            Guid g = (Guid)Marshal.PtrToStructure(pGuid, typeof(Guid));
+            LocalFree(pGuid);
+            return g.ToString();
+        }
+        return string.Empty;
+    }
+
+    public static bool SetActiveGuid(string guidStr) {
+        Guid g;
+        if (Guid.TryParse(guidStr, out g)) {
+            return PowerSetActiveScheme(IntPtr.Zero, ref g) == 0;
+        }
+        return false;
+    }
+}
 "@ -ErrorAction SilentlyContinue
 
 function Get-GamingTweaksStatus {
@@ -43,7 +72,10 @@ function Get-GamingTweaksStatus {
     }
     $hagsEnabled = ($hagsVal -eq 2)
 
-    # 3. Game Mode
+    # 3. MPO (Multiplane Overlay)
+    $mpoStatus = Get-MpoStatus
+
+    # 4. Game Mode
     $gmKey = "HKCU:\Software\Microsoft\GameBar"
     $gmVal = 1
     if (Test-Path $gmKey) {
@@ -52,11 +84,17 @@ function Get-GamingTweaksStatus {
     }
     $gameModeEnabled = ($gmVal -eq 1)
 
-    # 4. Power Plan
-    $activePlan = (powercfg /getactivescheme)
-    $isHighPerf = ($activePlan -like "*Ultimate*" -or $activePlan -like "*High*")
+    # 5. Power Plan (Native Win32 powrprof.dll & Registry - zero child processes)
+    $activeGuid = Get-ActivePowerPlanGuid
+    $isHighPerf = $false
+    try {
+        $schemeProp = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$activeGuid" -ErrorAction SilentlyContinue
+        if ($schemeProp.FriendlyName -like "*Ultimate*" -or $schemeProp.FriendlyName -like "*High*") {
+            $isHighPerf = $true
+        }
+    } catch {}
 
-    # 5. Network TCP NoDelay (Nagle's Algorithm)
+    # 6. Network TCP NoDelay (Nagle's Algorithm)
     $tcpOptimized = $false
     $adaptersKey = "HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces"
     if (Test-Path $adaptersKey) {
@@ -70,7 +108,7 @@ function Get-GamingTweaksStatus {
         }
     }
 
-    # 6. PowerShell Runtime Engine Status
+    # 7. PowerShell Runtime Engine Status
     $isPs7Running = ($PSVersionTable.PSVersion.Major -ge 7)
     $pwshCmd = (Get-Command pwsh.exe -ErrorAction SilentlyContinue).Source
     if (-not $pwshCmd) {
@@ -88,9 +126,12 @@ function Get-GamingTweaksStatus {
         TimerResolutionMs = $curMs
         TimerOptimized    = $timerOptimized
         HagsEnabled       = $hagsEnabled
+        MpoDisabled       = $mpoStatus.MpoDisabled
+        MpoStatusText     = $mpoStatus.StatusText
         GameModeEnabled   = $gameModeEnabled
         HighPerfPowerPlan = $isHighPerf
         ActivePowerPlan   = $activePlan
+        ActivePowerGuid   = $activeGuid
         TcpNoDelayEnabled = $tcpOptimized
         IsPs7Running      = $isPs7Running
         IsPs7Installed    = $ps7Installed
@@ -118,6 +159,33 @@ function Set-HagsEnabled([bool]$enable) {
     return "Hardware-Accelerated GPU Scheduling set to $state (Requires PC restart to take effect)."
 }
 
+function Get-MpoStatus {
+    $dwmKey = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
+    $val = $null
+    if (Test-Path $dwmKey) {
+        $val = (Get-ItemProperty -Path $dwmKey -Name "OverlayTestMode" -ErrorAction SilentlyContinue).OverlayTestMode
+    }
+    # OverlayTestMode = 5 means MPO is disabled (smooth borderless window fix)
+    $isMpoDisabled = ($val -eq 5)
+    return [PSCustomObject]@{
+        MpoDisabled = $isMpoDisabled
+        RawValue    = $val
+        StatusText  = if ($isMpoDisabled) { "DISABLED (OverlayTestMode=5 - Fixes borderless window stutters)" } else { "ENABLED (Windows Default)" }
+    }
+}
+
+function Set-MpoDisabled([bool]$disable) {
+    $dwmKey = "HKLM:\SOFTWARE\Microsoft\Windows\Dwm"
+    if (-not (Test-Path $dwmKey)) { New-Item -Path $dwmKey -Force | Out-Null }
+    if ($disable) {
+        Set-ItemProperty -Path $dwmKey -Name "OverlayTestMode" -Value 5 -Type DWord -Force -ErrorAction SilentlyContinue
+        return "Multiplane Overlay (MPO) DISABLED (OverlayTestMode=5). Eliminates borderless stutter and black flickering."
+    } else {
+        Remove-ItemProperty -Path $dwmKey -Name "OverlayTestMode" -Force -ErrorAction SilentlyContinue
+        return "Multiplane Overlay (MPO) RESTORED to Windows default."
+    }
+}
+
 function Set-GameModeEnabled([bool]$enable) {
     $val = if ($enable) { 1 } else { 0 }
     $key = "HKCU:\Software\Microsoft\GameBar"
@@ -135,7 +203,6 @@ function Set-TcpNoDelay([bool]$enable) {
 
     $appliedCount = 0
     foreach ($k in $subKeys) {
-        # Target all valid interface GUIDs
         if ($k.PSChildName -match "^\{[a-f0-9\-]{36}\}$") {
             try {
                 if ($enable) {
@@ -156,18 +223,73 @@ function Set-TcpNoDelay([bool]$enable) {
     return "TCP NoDelay set to $state."
 }
 
-function Enable-UltimatePerformancePlan {
+function Get-ActivePowerPlanGuid {
+    $guid = [NativePower]::GetActiveGuid()
+    if ($guid) { return $guid }
     try {
-        # Duplicate Ultimate Performance scheme if missing
-        $dup = powercfg -duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61 2>&1
-        # Extract GUID
-        $guidMatch = [regex]::Match($dup, "([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})")
-        if ($guidMatch.Success) {
-            powercfg /setactive $guidMatch.Value
-            return "Applied Ultimate Performance Power Scheme ($($guidMatch.Value))."
+        $reg = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes" -ErrorAction SilentlyContinue
+        if ($reg.ActivePowerScheme) { return $reg.ActivePowerScheme }
+    } catch {}
+    return "381b4222-f694-41f0-9685-ff5bb260df2e"
+}
+
+function Set-PowerPlanByGuid {
+    param([Parameter(Mandatory=$true)][string]$Guid)
+    if ($Guid -match "^[a-f0-9\-]{36}$") {
+        return [NativePower]::SetActiveGuid($Guid)
+    }
+    return $false
+}
+
+function Switch-ToUltimatePerformance {
+    $originalGuid = Get-ActivePowerPlanGuid
+
+    # Locate Ultimate Performance Scheme in Registry (zero external process execution)
+    $targetGuid = ""
+    try {
+        $schemes = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\*" -ErrorAction SilentlyContinue
+        foreach ($s in $schemes) {
+            if ($s.FriendlyName -like "*Ultimate*") {
+                $targetGuid = $s.PSChildName
+                break
+            }
+        }
+        if (-not $targetGuid) {
+            foreach ($s in $schemes) {
+                if ($s.FriendlyName -like "*High Performance*" -or $s.PSChildName -eq "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c") {
+                    $targetGuid = $s.PSChildName
+                    break
+                }
+            }
         }
     } catch {}
-    # Fallback to High Performance
-    powercfg /setactive 8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c
-    return "Applied High Performance Power Scheme."
+
+    if (-not $targetGuid) {
+        $targetGuid = "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c" # High Performance standard GUID
+    }
+
+    $applied = [NativePower]::SetActiveGuid($targetGuid)
+    return [PSCustomObject]@{
+        Success      = $applied
+        OriginalGuid = $originalGuid
+        AppliedGuid  = $targetGuid
+        PlanName     = "Ultimate Performance"
+        Message      = "Activated Performance Power Scheme ($targetGuid)."
+    }
+}
+
+function Restore-OriginalPowerPlan {
+    param([Parameter(Mandatory=$true)][string]$Guid)
+    if ($Guid -match "^[a-f0-9\-]{36}$") {
+        [NativePower]::SetActiveGuid($Guid) | Out-Null
+        return "Restored original power scheme ($Guid)."
+    }
+    # Fallback to Balanced
+    [NativePower]::SetActiveGuid("381b4222-f694-41f0-9685-ff5bb260df2e") | Out-Null
+    return "Restored default Balanced power scheme."
+}
+
+function Enable-UltimatePerformancePlan {
+    $res = Switch-ToUltimatePerformance
+    return $res.Message
 }

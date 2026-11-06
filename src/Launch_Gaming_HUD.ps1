@@ -140,15 +140,38 @@ if ($ForceRestart) {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
     } catch {}
+
+    # Clean up tracked HUD session
+    $hudSessionFile = Join-Path (Split-Path $ScriptDir -Parent) "hud_session.json"
+    if (Test-Path $hudSessionFile) {
+        try {
+            $sess = Get-Content $hudSessionFile -Raw | ConvertFrom-Json
+            if ($sess.ProcessId) {
+                Stop-Process -Id $sess.ProcessId -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item $hudSessionFile -Force -ErrorAction SilentlyContinue
+        } catch {}
+    }
+
     # Clean up WindowsTerminal instances associated with HUD
     foreach ($tp in $termProcs) {
         try {
             $cmdLine = (Get-CimInstance Win32_Process -Filter "ProcessId = $($tp.Id)" -ErrorAction SilentlyContinue).CommandLine
-            if ($cmdLine -like "*btop*" -or $cmdLine -like "*btm*" -or $cmdLine -like "*PingMonitor*" -or $cmdLine -like "*$hudX,$hudY*" -or $cmdLine -like "*--help*") {
+            if ($tp.MainWindowTitle -like "*Hardware Telemetry HUD*" -or $tp.MainWindowTitle -like "*btop*" -or $tp.MainWindowTitle -like "*bottom*" -or $cmdLine -like "*btop*" -or $cmdLine -like "*btm*" -or $cmdLine -like "*PingMonitor*" -or $cmdLine -like "*$hudX,$hudY*" -or $cmdLine -like "*--help*") {
                 Stop-Process -Id $tp.Id -Force -ErrorAction SilentlyContinue
             }
         } catch {}
     }
+
+    # Clean up orphaned OpenConsole instances
+    try {
+        Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { 
+            $_.Name -eq "OpenConsole.exe" -and ($_.CommandLine -like "*btop*" -or $_.CommandLine -like "*btm*") 
+        } | ForEach-Object {
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+    } catch {}
+
     Start-Sleep -Milliseconds 400
 } else {
     if ($activeHudProcs -and $termProcs) {
@@ -194,7 +217,18 @@ if (-not $btopCmd) {
 if (-not $btopCmd -or -not (Test-Path $btopCmd)) {
     Write-HUDLog "btop4win telemetry executable not found in any candidate path." "ERROR"
     Add-Type -AssemblyName PresentationFramework -ErrorAction SilentlyContinue
-    [System.Windows.MessageBox]::Show("btop4win executable was not found!`n`nPlease open Game Booster and click 'Install Dependencies' in the Hardware HUD tab to install it automatically.", "Missing Dependency", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+    $darkMod = Join-Path (Join-Path $RootDir "src\Modules") "DarkDialog.ps1"
+    if (-not (Test-Path $darkMod) -and (Test-Path (Join-Path $ScriptDir "Modules\DarkDialog.ps1"))) {
+        $darkMod = Join-Path $ScriptDir "Modules\DarkDialog.ps1"
+    }
+    if (Test-Path $darkMod) { try { . $darkMod } catch {} }
+
+    $depMsg = "btop4win executable was not found!`n`nPlease open Game Booster and click 'Install Dependencies' in the Hardware HUD tab to install it automatically."
+    if (Get-Command Show-DarkModal -ErrorAction SilentlyContinue) {
+        Show-DarkModal $depMsg "Missing Dependency" ([System.Windows.MessageBoxButton]::OK) ([System.Windows.MessageBoxImage]::Warning)
+    } else {
+        [System.Windows.MessageBox]::Show($depMsg, "Missing Dependency", [System.Windows.MessageBoxButton]::OK, [System.Windows.MessageBoxImage]::Warning)
+    }
     exit 1
 }
 
@@ -233,52 +267,39 @@ Write-HUDLog "Configuring HUD layout for preset: $activePreset (btop: $btopCmd, 
 
 $pingScript = Join-Path $ScriptDir "PingMonitor.ps1"
 
-$wtArgs = @(
-    "-w", "new",
-    "--pos", "$hudX,$hudY",
-    "--size", "$hudCols,$hudRows"
-)
+# Windows Terminal command-line rules:
+# Window options (-w, --pos, --size) MUST be placed before the first subcommand.
+# Each pane's executable & arguments are escaped cleanly.
+$hudTitle = "Hardware-HUD"
+$baseArgs = "-w new --pos $hudX,$hudY --size $hudCols,$hudRows --title `"$hudTitle`" -d `"$btopDir`" `"$btopCmd`""
 
-switch ($activePreset) {
+$finalArgs = switch ($activePreset) {
     "esports_ping" {
         # Preset 2: Left 45% btop, Right 55% Large Ping & Jitter Telemetry
-        $wtArgs += @(
-            "-d", $btopDir,
-            $btopCmd,
-            ";",
-            "split-pane", "-V", "-s", "0.55", "-d", $ScriptDir, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $pingScript
-        )
+        "$baseArgs `; split-pane -V -s 0.55 -d `"$ScriptDir`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$pingScript`""
     }
     "minimal_dual" {
         # Preset 3: Clean dual-pane btop (left) + btm (right)
-        $wtArgs += @(
-            "-d", $btopDir,
-            $btopCmd,
-            ";",
-            "split-pane", "-V", "-s", "0.5", "-d", $ScriptDir, $btmCmd
-        )
+        "$baseArgs `; split-pane -V -s 0.5 -d `"$ScriptDir`" `"$btmCmd`""
     }
     default {
         # Preset 1 (tri_pane): Left btop, Top-Right btm, Bottom-Right PingMonitor
-        $wtArgs += @(
-            "-d", $btopDir,
-            $btopCmd,
-            ";",
-            "split-pane", "-V", "-s", "0.5", "-d", $ScriptDir, $btmCmd, "--default_widget_type", "net",
-            ";",
-            "split-pane", "-H", "-s", "0.35", "-d", $ScriptDir, "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $pingScript
-        )
+        "$baseArgs `; split-pane -V -s 0.5 -d `"$ScriptDir`" `"$btmCmd`" --default_widget_type net `; split-pane -H -s 0.35 -d `"$ScriptDir`" powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$pingScript`""
     }
 }
 
-Write-HUDLog "Executing wt.exe with args: $($wtArgs -join ' ')"
+Write-HUDLog "Executing wt.exe with args: $finalArgs"
 
 try {
-    Start-Process -FilePath $wtPath -ArgumentList $wtArgs
-    Write-HUDLog "Windows Terminal spawned successfully."
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = if ($wtPath -and (Test-Path $wtPath)) { $wtPath } else { "wt.exe" }
+    $psi.Arguments = $finalArgs
+    $psi.UseShellExecute = $true
+    [System.Diagnostics.Process]::Start($psi) | Out-Null
+    Write-HUDLog "Windows Terminal spawned successfully via ProcessStartInfo."
 } catch {
-    Write-HUDLog "Failed to spawn via path, trying alias wt.exe: $_" "WARN"
-    Start-Process "wt.exe" -ArgumentList $wtArgs
+    Write-HUDLog "ProcessStartInfo failed, trying Start-Process fallback: $_" "WARN"
+    Start-Process -FilePath (if ($wtPath -and (Test-Path $wtPath)) { $wtPath } else { "wt.exe" }) -ArgumentList $finalArgs
 }
 
 # Snap window to exact coordinates
@@ -295,6 +316,16 @@ while ($attempts -lt 20 -and -not $snapped) {
             [WindowSnapper]::SetWindowPos($targetHwnd, [IntPtr]::Zero, $hudX, $hudY, $hudWidth, $hudHeight, 0x0040) | Out-Null
             $snapped = $true
             Write-HUDLog "Window position successfully snapped."
+
+            try {
+                $hudSessionFile = Join-Path (Split-Path $ScriptDir -Parent) "hud_session.json"
+                [PSCustomObject]@{
+                    ProcessId  = $termProc.Id
+                    WindowHwnd = $targetHwnd.ToInt64()
+                    Timestamp  = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                } | ConvertTo-Json | Set-Content -Path $hudSessionFile -Encoding UTF8 -Force
+            } catch {}
+
             break
         }
     }
@@ -303,5 +334,16 @@ while ($attempts -lt 20 -and -not $snapped) {
 
 if (-not $snapped) {
     Write-HUDLog "Window spawned with native --pos and --size parameters."
+    $termProcs = Get-Process -Name "WindowsTerminal" -ErrorAction SilentlyContinue | Sort-Object StartTime -Descending
+    if ($termProcs -and $termProcs.Count -gt 0) {
+        try {
+            $hudSessionFile = Join-Path (Split-Path $ScriptDir -Parent) "hud_session.json"
+            [PSCustomObject]@{
+                ProcessId  = $termProcs[0].Id
+                WindowHwnd = 0
+                Timestamp  = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+            } | ConvertTo-Json | Set-Content -Path $hudSessionFile -Encoding UTF8 -Force
+        } catch {}
+    }
 }
 

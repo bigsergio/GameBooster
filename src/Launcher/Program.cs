@@ -6,11 +6,11 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("Game Booster PRO")]
-[assembly: AssemblyProduct("Game Booster PRO")]
+[assembly: AssemblyTitle("Game Booster PRO v2.0")]
+[assembly: AssemblyProduct("Game Booster PRO v2.0")]
 [assembly: AssemblyDescription("Autonomous Gaming Performance & Hardware Telemetry Suite for Windows")]
-[assembly: AssemblyVersion("1.2.2.0")]
-[assembly: AssemblyFileVersion("1.2.2.0")]
+[assembly: AssemblyVersion("2.0.0.0")]
+[assembly: AssemblyFileVersion("2.0.0.0")]
 
 namespace GameBoosterLauncher
 {
