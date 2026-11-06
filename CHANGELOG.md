@@ -29,6 +29,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `SystemTweaks.ps1` — Low-latency Windows subsystem optimizations (0.5ms timer, MPO, HAGS).
   - `Watchdog.ps1` — Crash recovery and session state restoration.
 
+### 🚀 Clean Portable Distribution & Streamlined Directory Layout
+- **Single-Click Portable Executable:** Positioned `GameBooster.exe` as the sole primary launcher at the root with embedded UAC administrator manifest and automatic Mark-of-the-Web (`Zone.Identifier`) unblocking.
+- **Tucked-Away Diagnostics & Tools (`tools/`):** Relocated secondary batch scripts (`Debug_GameBooster.bat`, `Export-DebugReport.bat`, `Run_GameBooster_Admin.bat`) into an isolated `tools/` folder with documentation to eliminate launcher ambiguity.
+- **Engine Templates in Core (`src/`):** Moved `config.template.json` into `src/` to prevent root clutter while maintaining zero-setup automatic profile initialization.
+
 ### 🎯 100% Anti-Cheat Safe In-Game OSD (On-Screen Display)
 - **Zero DLL Injection:** Ultra-fast, click-through hardware telemetry overlay using native Windows layered windows (`WS_EX_TRANSPARENT | WS_EX_LAYERED | WS_EX_TOOLWINDOW`).
 - **Telemetry Bar:** Displays live **FPS**, **1% Low Frametimes**, **CPU%**, **RAM Usage**, and **Ping (ms)** with 0% anti-cheat detection risk.

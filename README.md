@@ -19,10 +19,9 @@
 ## 🚀 Quick Start for Beta Testers
 
 1. **Extract the ZIP file** to any folder on your PC (e.g. `C:\Games\GameBooster` or your `Downloads\GameBooster_v2` folder).
-2. **Launch the Application** using any of these options:
-   - **`GameBooster.exe`** (Recommended) — Standalone elevated launcher with automatic `Zone.Identifier` unblocking.
-   - **`Run_GameBooster_Admin.bat`** — Auto-elevating UAC batch launcher.
-   - **`Launch_GameBooster.bat`** — Standard PowerShell launch script.
+2. **Launch the Application:**
+   - Double-click **`GameBooster.exe`** (Standalone elevated launcher with automatic `Zone.Identifier` unblocking).
+   *(Optional fallback and debug scripts are located in `tools/` for advanced command-line use).*
 3. **Engage Game Mode:**
    - Review running background apps in the dashboard.
    - Click **⚡ ENGAGE GAME MODE** to throttle non-gaming tasks, purge cached standby RAM, activate the 0.5ms high-resolution timer, and boost CPU priority.

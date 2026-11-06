@@ -1,4 +1,4 @@
-﻿# ============================================================================
+# ============================================================================
 # Game Mode Booster v1.2.2 PRO
 # Unified Gaming Performance Suite & High-Refresh Optimizer
 # Clean, Autonomous, Zero-Telemetry & GitHub-Ready
@@ -69,7 +69,13 @@ $ModulesDir = if (Test-Path (Join-Path $ScriptDir "Modules")) {
 }
 
 $ConfigFile = Join-Path $RootDir "config.json"
-$ConfigTemplate = Join-Path $RootDir "config.template.json"
+$ConfigTemplate = if (Test-Path (Join-Path $RootDir "config.template.json")) {
+    Join-Path $RootDir "config.template.json"
+} elseif (Test-Path (Join-Path $ScriptDir "config.template.json")) {
+    Join-Path $ScriptDir "config.template.json"
+} else {
+    Join-Path $RootDir "config.template.json"
+}
 $LogFile = Join-Path $RootDir "gamebooster.log"
 $SessionFile = Join-Path $RootDir "last_session.json"
 $TrayPidFile = Join-Path $RootDir "tray.pid"

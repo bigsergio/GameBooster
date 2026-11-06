@@ -3,8 +3,8 @@
 :: Game Booster PRO v2.0 - Debug Console Launcher
 :: Keeps console window open to display real-time engine initialization & logs
 :: ============================================================================
-set "APP_DIR=%~dp0"
-cd /d "%APP_DIR%"
+set "ROOT_DIR=%~dp0..\"
+cd /d "%ROOT_DIR%"
 
 where pwsh.exe >nul 2>nul
 if %ERRORLEVEL% equ 0 (
@@ -13,5 +13,7 @@ if %ERRORLEVEL% equ 0 (
     set "PS_EXE=powershell.exe"
 )
 
-echo Starting Game Booster PRO v2.0 in Debug Mode...
-%PS_EXE% -NoProfile -ExecutionPolicy Bypass -NoExit -File "%APP_DIR%src\GameBooster.ps1" -Gui
+echo ========================================================
+echo Game Booster PRO v2.0 - Launching in Console Debug Mode
+echo ========================================================
+%PS_EXE% -NoProfile -ExecutionPolicy Bypass -NoExit -File "%ROOT_DIR%src\GameBooster.ps1" -Gui

@@ -1,12 +1,11 @@
 @echo off
 :: ============================================================================
-:: Game Booster PRO v2.0 - Elevated Administrator Launcher
-:: Automatically requests Administrator UAC elevation
+:: Game Booster PRO v2.0 - Elevated Fallback Launcher
+:: Use this only if GameBooster.exe does not trigger UAC elevation automatically
 :: ============================================================================
-set "APP_DIR=%~dp0"
-cd /d "%APP_DIR%"
+set "ROOT_DIR=%~dp0..\"
+cd /d "%ROOT_DIR%"
 
-:: Check for Administrator privileges; if not elevated, prompt with UAC RunAs
 net session >nul 2>&1
 if %ERRORLEVEL% neq 0 (
     echo Requesting Administrator privileges...
@@ -14,8 +13,8 @@ if %ERRORLEVEL% neq 0 (
     exit /b
 )
 
-if exist "%APP_DIR%GameBooster.exe" (
-    start "" "%APP_DIR%GameBooster.exe"
+if exist "%ROOT_DIR%GameBooster.exe" (
+    start "" "%ROOT_DIR%GameBooster.exe"
     exit /b
 )
 
@@ -26,5 +25,5 @@ if %ERRORLEVEL% equ 0 (
     set "PS_EXE=powershell.exe"
 )
 
-start "" %PS_EXE% -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%APP_DIR%src\GameBooster.ps1" -Gui
+start "" %PS_EXE% -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "%ROOT_DIR%src\GameBooster.ps1" -Gui
 exit /b
